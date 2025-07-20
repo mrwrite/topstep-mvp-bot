@@ -15,8 +15,16 @@ import os
 router = APIRouter()
 
 def fetch_price_data(token, contract_id, interval_minutes=1, lookback_minutes=100):
-    end_time = datetime.utcnow() - timedelta(hours=24)
-    start_time = end_time - timedelta(hours=1)
+    """Fetch historical bars for the given contract.
+
+    The function previously looked at a very short window one day in the past.
+    To better seed the indicator calculations we extend the window to cover the
+    last month.  The API still respects the ``limit`` parameter so callers can
+    control how many bars are returned.
+    """
+
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(days=30)
 
     url = f"{BASE_URL}/api/History/retrieveBars"
     payload = {
