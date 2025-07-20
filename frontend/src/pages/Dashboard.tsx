@@ -49,10 +49,18 @@ function Dashboard() {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
     })
       .then(res => {
-        setBuyThreshold(res.data.buy_threshold);
-        setSellThreshold(res.data.sell_threshold);
+        // API may return null if the user record predates rule columns
+        const buy = res.data.buy_threshold ?? 30;
+        const sell = res.data.sell_threshold ?? 70;
+        setBuyThreshold(buy);
+        setSellThreshold(sell);
       })
-      .catch(err => console.error('Failed to fetch rules:', err));
+      .catch(err => {
+        console.error('Failed to fetch rules:', err);
+        // fallback to defaults if the request fails
+        setBuyThreshold(30);
+        setSellThreshold(70);
+      });
   }, []);
 
   return (
@@ -104,7 +112,7 @@ function Dashboard() {
           if (eventSourceRef.current) {
             eventSourceRef.current.close();
           }
-        const url = `http://localhost:8000/scheduler/run-bot?symbol=${encodeURIComponent(selectedSymbol)}&buy_threshold=${buyThreshold}&sell_threshold=${sellThreshold}`;
+        const url = `http://localhost:8000/scheduler/run-bot?symbol=${encodeURIComponent(selectedSymbol)}&buy_threshold=${buyThreshold ?? 30}&sell_threshold=${sellThreshold ?? 70}`;
         const es = new EventSource(url);
         eventSourceRef.current = es;
         setLogs([]);

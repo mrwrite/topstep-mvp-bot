@@ -97,8 +97,8 @@ def get_rules(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {
-        "buy_threshold": user.buy_threshold,
-        "sell_threshold": user.sell_threshold,
+        "buy_threshold": user.buy_threshold or 30,
+        "sell_threshold": user.sell_threshold or 70,
     }
 
 
