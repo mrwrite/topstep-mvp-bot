@@ -111,7 +111,10 @@ def get_current_user_model(
 
 @router.get("/topstep-token")
 def topstep_login(current_user: str = Depends(get_current_user)):
-    return {"token": get_session_token()}
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy TopStep token endpoint is disabled. Use saved broker integrations.",
+    )
 
 
 @router.get("/rules")

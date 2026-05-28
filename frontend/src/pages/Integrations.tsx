@@ -17,6 +17,8 @@ type Integration = {
 type ProviderInfo = {
   provider: string;
   capabilities: string[];
+  implemented_capabilities: string[];
+  roadmap_capabilities: string[];
 };
 
 type FormState = {
@@ -206,8 +208,10 @@ function Integrations() {
 
   const integrationsEmpty = useMemo(() => integrations.length === 0, [integrations]);
   const activeId = activeIntegration?.id;
-  const capabilitiesFor = (provider: string) =>
-    providerInfo.find(item => item.provider === provider)?.capabilities ?? [];
+  const implementedCapabilitiesFor = (provider: string) =>
+    providerInfo.find(item => item.provider === provider)?.implemented_capabilities ?? [];
+  const roadmapCapabilitiesFor = (provider: string) =>
+    providerInfo.find(item => item.provider === provider)?.roadmap_capabilities ?? [];
   const isActive = (integrationId: number) => activeId === integrationId;
   const formatCapabilities = (caps: string[]) =>
     caps.map(cap => (cap === 'BROKER_TRADING' ? 'Broker' : cap === 'SIGNALS' ? 'Signals' : cap)).join(' · ');
@@ -228,8 +232,8 @@ function Integrations() {
       <header className="topbar">
         <div className="topbar-left">
           <div>
-            <p className="eyebrow">TopStep MVP Bot</p>
-            <div className="app-title">Integrations</div>
+            <p className="eyebrow">Trading Bot</p>
+            <div className="app-title">Broker Integrations</div>
           </div>
           <span className="pill subtle">setup</span>
         </div>
@@ -251,7 +255,7 @@ function Integrations() {
         <aside className="panel card">
           <div className="panel-header">
             <div>
-            <p className="eyebrow">Integration setup</p>
+            <p className="eyebrow">Broker setup</p>
             <h2>{editingId ? 'Edit integration' : 'Add integration'}</h2>
             </div>
             <button type="button" className="ghost compact" onClick={startCreate}>
@@ -316,7 +320,7 @@ function Integrations() {
               id="environment"
               value={form.environment}
               onChange={e => setForm({ ...form, environment: e.target.value })}
-              placeholder="sandbox / live"
+              placeholder="sandbox / paper / live"
             />
             <label htmlFor="accountId">Account ID</label>
             <input
@@ -376,7 +380,7 @@ function Integrations() {
 
             {form.provider !== 'TOPSTEPX' && form.provider !== 'TRADINGVIEW' && (
               <>
-                <p className="muted tiny">Broker integration setup is coming soon.</p>
+                <p className="muted tiny">This broker is on the roadmap and unavailable for trading.</p>
                 <label htmlFor="apiKey">API Key</label>
                 <input
                   id="apiKey"
@@ -423,8 +427,7 @@ function Integrations() {
             <div className="empty-state">
               <h3>No integrations yet</h3>
               <p className="muted">
-                Add your first broker or signal integration to enable live alerts and automated
-                trade execution.
+                Add your first broker or signal integration to enable paper-mode sessions and alerts.
               </p>
               <button type="button" className="primary" onClick={startCreate}>
                 Add integration
@@ -439,9 +442,14 @@ function Integrations() {
                     <p className="muted tiny">
                       {integration.provider} · {integration.status}
                     </p>
-                    {formatCapabilities(capabilitiesFor(integration.provider)) && (
+                    {formatCapabilities(implementedCapabilitiesFor(integration.provider)) && (
                       <p className="muted tiny">
-                        {formatCapabilities(capabilitiesFor(integration.provider))}
+                        Implemented: {formatCapabilities(implementedCapabilitiesFor(integration.provider))}
+                      </p>
+                    )}
+                    {formatCapabilities(roadmapCapabilitiesFor(integration.provider)) && (
+                      <p className="muted tiny">
+                        Roadmap: {formatCapabilities(roadmapCapabilitiesFor(integration.provider))}
                       </p>
                     )}
                     <div className="meta-row">

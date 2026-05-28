@@ -413,7 +413,7 @@ function Dashboard() {
       <header className="topbar">
         <div className="topbar-left">
           <div>
-            <p className="eyebrow">TopStep MVP Bot</p>
+            <p className="eyebrow">Trading Bot</p>
             <div className="app-title">Trading Orchestrator</div>
           </div>
           <span className="pill subtle">demo</span>
@@ -491,10 +491,10 @@ function Dashboard() {
             </div>
             {activeIntegration ? (
               <p className="muted tiny">
-                Using {activeIntegration.display_name} for broker execution.
+                Using {activeIntegration.display_name} for selected broker context.
               </p>
             ) : (
-              <p className="muted tiny">Select a broker integration to enable live trading.</p>
+              <p className="muted tiny">Select a broker integration for paper sessions.</p>
             )}
             {!activeIntegration && (
               <div className="inline-alert warning">

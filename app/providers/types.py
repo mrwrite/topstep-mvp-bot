@@ -48,3 +48,38 @@ PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {
         IntegrationCapability.SIGNALS,
     },
 }
+
+
+IMPLEMENTED_PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {
+    IntegrationProvider.TOPSTEPX: {
+        IntegrationCapability.BROKER_TRADING,
+        IntegrationCapability.MARKET_DATA,
+        IntegrationCapability.ACCOUNT_INFO,
+    },
+    IntegrationProvider.TRADINGVIEW: {
+        IntegrationCapability.SIGNALS,
+    },
+    IntegrationProvider.TRADOVATE: set(),
+    IntegrationProvider.NINJATRADER: set(),
+    IntegrationProvider.IBKR: set(),
+    IntegrationProvider.ETX: set(),
+}
+
+
+ROADMAP_PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {
+    provider: PROVIDER_CAPABILITIES.get(provider, set())
+    - IMPLEMENTED_PROVIDER_CAPABILITIES.get(provider, set())
+    for provider in IntegrationProvider
+}
+
+
+def provider_supports(
+    provider: IntegrationProvider,
+    required_capabilities: set[IntegrationCapability] | None,
+    *,
+    implemented_only: bool = True,
+) -> bool:
+    capabilities = (
+        IMPLEMENTED_PROVIDER_CAPABILITIES if implemented_only else PROVIDER_CAPABILITIES
+    ).get(provider, set())
+    return not required_capabilities or required_capabilities.issubset(capabilities)

@@ -6,11 +6,7 @@ from .types import IntegrationCapability, IntegrationProvider
 
 class IbkrAdapter(ProviderAdapter):
     provider = IntegrationProvider.IBKR
-    capabilities = {
-        IntegrationCapability.BROKER_TRADING,
-        IntegrationCapability.MARKET_DATA,
-        IntegrationCapability.ACCOUNT_INFO,
-    }
+    capabilities: set[IntegrationCapability] = set()
 
     def validate_credentials(self) -> None:
         if not self.credentials:
@@ -19,7 +15,7 @@ class IbkrAdapter(ProviderAdapter):
     async def healthcheck(self) -> dict:
         if not self.credentials:
             return {"status": "not_configured", "message": "IBKR credentials missing."}
-        return {"status": "ok"}
+        return {"status": "unavailable", "message": "IBKR adapter is not implemented yet."}
 
     async def place_order(self, order: dict) -> dict:
         raise NotImplementedError("IBKR trading adapter is not implemented yet.")

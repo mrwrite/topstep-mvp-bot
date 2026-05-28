@@ -73,7 +73,7 @@ function Register() {
       <div className="login-panel">
         <div className="login-header">
           <div>
-            <p className="eyebrow">TopStep MVP Bot</p>
+            <p className="eyebrow">Trading Bot</p>
             <h1>Create account</h1>
             <p className="muted">Set up your credentials and connect integrations.</p>
           </div>

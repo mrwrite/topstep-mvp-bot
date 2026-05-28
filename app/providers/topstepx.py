@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from datetime import datetime, timedelta
 
 import requests
 
-from .base import ProviderAdapter, ProviderCapabilityError
+from .base import ProviderAdapter, ProviderCapabilityError, ProviderError
 from .types import IntegrationCapability, IntegrationProvider
 
 
@@ -28,22 +29,42 @@ class TopStepXAdapter(ProviderAdapter):
             or (metadata or {}).get("baseUrl")
             or os.getenv("TOPSTEP_BASE_URL", "https://api.topstepx.com")
         )
+        self._session_token_cache: str | None = None
+        self._session_token_expires_at: datetime | None = None
 
     def validate_credentials(self) -> None:
         if not self.credentials.get("userName") or not self.credentials.get("apiKey"):
             raise ValueError("TopStepX credentials require userName and apiKey.")
 
     def _get_session_token(self) -> str:
+        if (
+            self._session_token_cache
+            and self._session_token_expires_at
+            and self._session_token_expires_at > datetime.utcnow()
+        ):
+            return self._session_token_cache
+
         self.validate_credentials()
         url = f"{self.base_url}/api/Auth/loginKey"
         payload = {"userName": self.credentials["userName"], "apiKey": self.credentials["apiKey"]}
         headers = {"accept": "text/plain", "Content-Type": "application/json"}
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise ProviderError(
+                "TopStepX authentication request failed.",
+                code="auth_request_failed",
+                retryable=True,
+            ) from exc
+        except ValueError as exc:
+            raise ProviderError("TopStepX authentication returned invalid JSON.", code="auth_invalid_response") from exc
         if data.get("success") and data.get("token"):
-            return data["token"]
-        raise ValueError(data.get("errorMessage") or "TopStepX authentication failed.")
+            self._session_token_cache = data["token"]
+            self._session_token_expires_at = datetime.utcnow() + timedelta(minutes=20)
+            return self._session_token_cache
+        raise ProviderError(data.get("errorMessage") or "TopStepX authentication failed.", code="auth_failed")
 
     async def healthcheck(self) -> dict:
         try:
@@ -51,6 +72,20 @@ class TopStepXAdapter(ProviderAdapter):
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
         return {"status": "ok"}
+
+    async def diagnostics(self) -> dict:
+        health = await self.healthcheck()
+        return {
+            "provider": self.provider.value,
+            "health": health,
+            "session": {
+                "cached": bool(self._session_token_cache),
+                "expires_at": self._session_token_expires_at.isoformat()
+                if self._session_token_expires_at
+                else None,
+            },
+            "implemented_capabilities": [cap.value for cap in self.capabilities],
+        }
 
     async def get_contracts(self) -> list[dict]:
         token = self._get_session_token()
@@ -90,25 +125,44 @@ class TopStepXAdapter(ProviderAdapter):
             return None
         return accounts[0].get("id")
 
-    async def get_account(self) -> dict:
+    async def list_accounts(self) -> list[dict]:
         token = self._get_session_token()
-        account_id = self._get_active_account_id(token)
-        if not account_id:
+        url = f"{self.base_url}/api/Account/search"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        payload = {"onlyActiveAccounts": True}
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+        accounts = data.get("accounts") or []
+        return [
+            {
+                "id": account.get("id"),
+                "name": account.get("name") or str(account.get("id")),
+                "active": account.get("active", True),
+                "raw": account,
+            }
+            for account in accounts
+            if account.get("id") is not None
+        ]
+
+    async def get_account(self) -> dict:
+        accounts = await self.list_accounts()
+        if not accounts:
             raise ProviderCapabilityError("No active account available for TopStepX.")
-        return {"account_id": account_id}
+        return accounts[0]
 
     async def place_order(self, order: dict) -> dict:
-        token = self._get_session_token()
         symbol = order.get("symbol")
         side = order.get("side")
         quantity = order.get("quantity")
         if not symbol or not side or not quantity:
             raise ValueError("Order requires symbol, side, and quantity.")
 
-        account_id = self._get_active_account_id(token)
+        account_id = order.get("account_id")
         if not account_id:
-            return {"success": False, "errorMessage": "No active account available to place trade."}
+            return {"success": False, "errorMessage": "Order requires a selected account_id."}
 
+        token = self._get_session_token()
         contract_id = self.get_contract_id(symbol)
         if not contract_id:
             return {"success": False, "errorMessage": f"Could not find contract for symbol: {symbol}"}

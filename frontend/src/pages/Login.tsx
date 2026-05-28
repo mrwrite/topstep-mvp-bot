@@ -48,7 +48,7 @@ function Login() {
       <div className="login-panel">
         <div className="login-header">
           <div>
-            <p className="eyebrow">TopStep MVP Bot</p>
+            <p className="eyebrow">Trading Bot</p>
             <h1>Sign in</h1>
             <p className="muted">Connect to monitor the RSI bot and manage sessions.</p>
           </div>

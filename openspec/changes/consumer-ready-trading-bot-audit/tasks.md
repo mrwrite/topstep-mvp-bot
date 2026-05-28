@@ -18,17 +18,17 @@
 
 ## 2. Phase 2: Broker/Integration Abstraction Hardening
 
-- [ ] 2.1 Split provider metadata into implemented capabilities and roadmap capabilities.
-- [ ] 2.2 Mark Tradovate, NinjaTrader, IBKR, and ETX live trading/market-data capabilities unavailable until real adapters pass conformance tests.
-- [ ] 2.3 Expand the provider adapter interface for auth/session state, accounts, contracts, bars/quotes, submit order, get order, open orders, fills, positions, cancel, flatten, and diagnostics.
-- [ ] 2.4 Add adapter conformance test fixtures and require each enabled provider to pass them before capability exposure.
-- [ ] 2.5 Add provider-specific normalized error taxonomy for auth, validation, rate limit, provider unavailable, rejected order, timeout, and unknown state.
-- [ ] 2.6 Add TopStepX session caching with expiry tracking and safe refresh behavior.
-- [ ] 2.7 Add explicit account retrieval and account selection endpoints for providers that support account info.
-- [ ] 2.8 Change TopStepX order placement to require selected account id instead of automatically using the first active account.
-- [ ] 2.9 Change contract fetching to reject live fallback contracts and label demo/paper fallback contracts as non-live.
-- [ ] 2.10 Add provider health and credential validation endpoints for the integrations UI.
-- [ ] 2.11 Remove or quarantine legacy env-based TopStepX modules from production execution paths.
+- [x] 2.1 Split provider metadata into implemented capabilities and roadmap capabilities.
+- [x] 2.2 Mark Tradovate, NinjaTrader, IBKR, and ETX live trading/market-data capabilities unavailable until real adapters pass conformance tests.
+- [x] 2.3 Expand the provider adapter interface for auth/session state, accounts, contracts, bars/quotes, submit order, get order, open orders, fills, positions, cancel, flatten, and diagnostics.
+- [x] 2.4 Add adapter conformance test fixtures and require each enabled provider to pass them before capability exposure.
+- [x] 2.5 Add provider-specific normalized error taxonomy for auth, validation, rate limit, provider unavailable, rejected order, timeout, and unknown state.
+- [x] 2.6 Add TopStepX session caching with expiry tracking and safe refresh behavior.
+- [x] 2.7 Add explicit account retrieval and account selection endpoints for providers that support account info.
+- [x] 2.8 Change TopStepX order placement to require selected account id instead of automatically using the first active account.
+- [x] 2.9 Change contract fetching to reject live fallback contracts and label demo/paper fallback contracts as non-live.
+- [x] 2.10 Add provider health and credential validation endpoints for the integrations UI.
+- [x] 2.11 Remove or quarantine legacy env-based TopStepX modules from production execution paths.
 
 ## 3. Phase 3: Trading Execution Reliability
 

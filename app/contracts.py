@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
-from app.integrations_service import env_fallback_enabled, env_topstepx_credentials, resolve_integration
+from app.integrations_service import (
+    get_integration_for_user,
+    resolve_integration,
+)
 from app.providers.factory import get_adapter
-from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability, IntegrationProvider
 from app.trading_safety import LIVE_MODE, normalize_mode
 
@@ -38,6 +40,22 @@ async def list_contracts(
         required_provider=provider,
         required_capabilities={IntegrationCapability.MARKET_DATA},
     )
+    if integration_id is not None and not integration:
+        candidate = get_integration_for_user(db, current_user.id, integration_id)
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Integration not found for current user.",
+            )
+        if candidate.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Integration is not active.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected integration does not provide implemented market data.",
+        )
 
     if not integration:
         if mode == LIVE_MODE:
@@ -45,21 +63,6 @@ async def list_contracts(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Live mode requires contracts from a selected market data integration.",
             )
-        if env_fallback_enabled():
-            env_credentials = env_topstepx_credentials()
-            if env_credentials:
-                adapter = TopStepXAdapter(env_credentials, {})
-                try:
-                    contracts = await adapter.get_contracts()
-                    symbols = [c.get("name") for c in contracts if c.get("name")]
-                    return {
-                        "contracts": symbols or _fallback_contracts(),
-                        "source": "env",
-                        "tradable_live": False,
-                        "message": "Development env fallback contracts are not live-tradable.",
-                    }
-                except Exception as exc:
-                    logger.warning("Env fallback contracts failed: %s", exc)
         return {
             "contracts": _fallback_contracts(),
             "source": "fallback",

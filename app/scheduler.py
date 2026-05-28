@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app import database, models
 from app.auth_routes import get_current_user_model
 from app.indicators import compute_indicators
-from app.integrations_service import env_fallback_enabled, env_topstepx_credentials, resolve_integration
+from app.integrations_service import resolve_integration
 from app.providers.factory import get_adapter
 from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability
@@ -285,13 +285,7 @@ def run_bot(
                 },
             )
 
-            adapter = None
-            if integration:
-                adapter = get_adapter(integration)
-            elif env_fallback_enabled():
-                env_credentials = env_topstepx_credentials()
-                if env_credentials:
-                    adapter = TopStepXAdapter(env_credentials, {})
+            adapter = get_adapter(integration) if integration else None
 
             if not adapter:
                 yield log("No active market data integration configured.")
