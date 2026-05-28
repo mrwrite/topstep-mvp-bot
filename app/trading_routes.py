@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
-from app.integrations_service import resolve_integration
 from app.paper_execution import execute_paper_order
 from app.providers.factory import get_adapter
-from app.providers.types import IntegrationCapability, IntegrationProvider, PROVIDER_CAPABILITIES
+from app.providers.types import IntegrationCapability
+from app.trading_context import trading_context_service
 from app.trading_safety import build_order_intent
 
 router = APIRouter()
@@ -30,19 +30,20 @@ async def test_trade(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user_model),
 ):
-    integration = resolve_integration(
+    context = trading_context_service.resolve(
         db,
-        current_user.id,
+        user_id=current_user.id,
+        trading_mode=trading_mode,
         required_capabilities={IntegrationCapability.BROKER_TRADING},
+        require_integration=True,
     )
-    if not integration:
-        raise HTTPException(status_code=400, detail="No active broker integration configured.")
+    integration = context.integration
     intent = build_order_intent(
         user_id=current_user.id,
         symbol="NQU5",
         side="BUY",
         quantity=1,
-        trading_mode=trading_mode,
+        trading_mode=context.trading_mode,
         integration_id=integration.id,
         idempotency_key=f"test-trade:{current_user.id}",
         source="test-trade",
@@ -75,38 +76,53 @@ async def receive_signal(
     if signal_integration.status != "active":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Signal integration is not active.")
 
-    try:
-        signal_provider = IntegrationProvider(signal_integration.provider)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported signal provider.") from exc
-    if IntegrationCapability.SIGNALS not in PROVIDER_CAPABILITIES.get(signal_provider, set()):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Integration does not support signals.")
+    signal_context = trading_context_service.resolve(
+        db,
+        user_id=signal_integration.user_id,
+        trading_mode=signal.trading_mode,
+        integration_id=signal_integration.id,
+        symbol=signal.symbol,
+        required_capabilities={IntegrationCapability.SIGNALS},
+        require_integration=True,
+        require_contract=True,
+    )
 
-    signal_adapter = get_adapter(signal_integration)
+    signal_adapter = get_adapter(signal_context.integration)
     if hasattr(signal_adapter, "validate_webhook_secret"):
         if not signal_adapter.validate_webhook_secret(signal.secret):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret.")
 
     broker_integration = None
     if signal.broker_integration_id is not None:
-        broker_integration = resolve_integration(
+        context = trading_context_service.resolve(
             db,
-            signal_integration.user_id,
+            user_id=signal_integration.user_id,
+            trading_mode=signal.trading_mode,
             integration_id=signal.broker_integration_id,
+            symbol=signal.symbol,
             required_capabilities={IntegrationCapability.BROKER_TRADING},
+            require_integration=True,
+            require_contract=True,
         )
-        if not broker_integration:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Broker integration not found for signal owner.",
-            )
+        broker_integration = context.integration
+    else:
+        context = trading_context_service.resolve(
+            db,
+            user_id=signal_integration.user_id,
+            trading_mode=signal.trading_mode,
+            symbol=signal.symbol,
+            required_capabilities={IntegrationCapability.BROKER_TRADING},
+            require_integration=False,
+            require_contract=True,
+            allow_paper_fallback=True,
+        )
 
     intent = build_order_intent(
         user_id=signal_integration.user_id,
-        symbol=signal.symbol,
+        symbol=context.symbol,
         side=signal.side,
         quantity=signal.quantity,
-        trading_mode=signal.trading_mode,
+        trading_mode=context.trading_mode,
         order_type=signal.order_type,
         integration_id=broker_integration.id if broker_integration else None,
         idempotency_key=signal.idempotency_key,

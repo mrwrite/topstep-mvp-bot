@@ -1,18 +1,18 @@
 ## Phase 1: Trading Context and Ownership Hardening
 
-- [ ] 1.1 [P0] Implement `TradingContextService` for manual, scheduler, webhook, strategy, contract, account, and order paths.
+- [x] 1.1 [P0] Implement `TradingContextService` for manual, scheduler, webhook, strategy, contract, account, and order paths.
   - Why it blocks live readiness: live trading cannot be safe while routes resolve users, integrations, accounts, contracts, mode, and provider health independently.
   - Acceptance criteria: every trading-sensitive route receives a context object or fails closed with readiness blockers; no route directly falls back to active/default integration for execution without the service.
   - Tests required: unit tests for explicit integration, active integration, inactive integration, missing credentials, unsupported capabilities, provider mismatch, missing account, missing contract, and live mode blocked.
-- [ ] 1.2 [P0] Enforce user ownership for all context resources and reject cross-user account, integration, contract, order, bot session, and strategy references.
+- [x] 1.2 [P0] Enforce user ownership for all context resources and reject cross-user account, integration, contract, order, bot session, and strategy references.
   - Why it blocks live readiness: cross-user resource leakage can route or stop the wrong user's trading.
   - Acceptance criteria: all context queries include user id; cross-user references return 404/403 without revealing resource existence.
   - Tests required: API tests with two users for integrations, accounts metadata, contracts, bot sessions, strategy configs, orders, positions, and audit events.
-- [ ] 1.3 [P0] Add route coverage tests proving manual, scheduler, webhook, bot, contract, account, and strategy execution paths all call `TradingContextService`.
+- [x] 1.3 [P0] Add route coverage tests proving manual, scheduler, webhook, bot, contract, account, and strategy execution paths all call `TradingContextService`.
   - Why it blocks live readiness: bypass paths undermine safety gates.
   - Acceptance criteria: tests fail if any trading-sensitive route bypasses context resolution.
   - Tests required: monkeypatch/spy tests or dependency-injection tests for each route family.
-- [ ] 1.4 [P1] Return structured readiness blockers from context resolution for frontend display.
+- [x] 1.4 [P1] Return structured readiness blockers from context resolution for frontend display.
   - Why it blocks live readiness: users need clear reasons actions are disabled.
   - Acceptance criteria: context failures return stable codes such as `missing_account`, `provider_unhealthy`, `risk_policy_missing`, and `live_disabled`.
   - Tests required: response shape tests and frontend mapping tests.

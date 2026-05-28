@@ -5,13 +5,10 @@ from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
-from app.integrations_service import (
-    get_integration_for_user,
-    resolve_integration,
-)
 from app.providers.factory import get_adapter
 from app.providers.types import IntegrationCapability, IntegrationProvider
 from app.trading_safety import LIVE_MODE, normalize_mode
+from app.trading_context import TradingContextError, trading_context_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -33,25 +30,27 @@ async def list_contracts(
 ):
     """Return a list of available contract symbols."""
     mode = normalize_mode(trading_mode)
-    integration = resolve_integration(
-        db,
-        current_user.id,
-        integration_id=integration_id,
-        required_provider=provider,
-        required_capabilities={IntegrationCapability.MARKET_DATA},
-    )
-    if integration_id is not None and not integration:
-        candidate = get_integration_for_user(db, current_user.id, integration_id)
-        if not candidate:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Integration not found for current user.",
-            )
-        if candidate.status != "active":
+    try:
+        context = trading_context_service.resolve(
+            db,
+            user_id=current_user.id,
+            trading_mode=mode,
+            integration_id=integration_id,
+            required_provider=provider,
+            required_capabilities={IntegrationCapability.MARKET_DATA},
+            require_integration=mode == LIVE_MODE or integration_id is not None,
+            allow_paper_fallback=True,
+        )
+    except TradingContextError as exc:
+        if exc.code == "missing_provider_capability":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Integration is not active.",
-            )
+                detail="Selected integration does not provide implemented market data.",
+            ) from exc
+        raise
+    integration = context.integration
+
+    if integration_id is not None and not integration:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Selected integration does not provide implemented market data.",

@@ -10,9 +10,11 @@ from .providers.base import ProviderCapabilityError
 from .providers.factory import get_adapter
 from .providers.types import (
     IMPLEMENTED_PROVIDER_CAPABILITIES,
+    IntegrationCapability,
     PROVIDER_CAPABILITIES,
     ROADMAP_PROVIDER_CAPABILITIES,
 )
+from .trading_context import TradingContextError, trading_context_service
 
 router = APIRouter()
 
@@ -184,14 +186,23 @@ async def list_integration_accounts(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user_model),
 ):
-    integration = _get_integration_or_404(db, integration_id, current_user.id)
-    if integration.status != "active":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Integration is not active.")
-    if not integration.credentials_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Integration credentials are required to fetch accounts.",
+    try:
+        context = trading_context_service.resolve(
+            db,
+            user_id=current_user.id,
+            trading_mode="paper",
+            integration_id=integration_id,
+            required_capabilities={IntegrationCapability.ACCOUNT_INFO},
+            require_integration=True,
         )
+    except TradingContextError as exc:
+        if exc.code == "missing_provider_capability":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected integration does not provide implemented account info.",
+            ) from exc
+        raise
+    integration = context.integration
 
     adapter = get_adapter(integration)
     try:

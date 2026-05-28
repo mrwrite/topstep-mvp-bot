@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app import database, models
 from app.auth_routes import get_current_user_model
 from app.indicators import compute_indicators
-from app.integrations_service import resolve_integration
 from app.providers.factory import get_adapter
 from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability
@@ -27,6 +26,7 @@ from app.strategy_engine import (
     serialize_strategy_config,
     serialize_strategy_signal,
 )
+from app.trading_context import trading_context_service
 from app.trading_safety import build_order_intent
 from logger import log_trade
 
@@ -152,17 +152,19 @@ def create_bot_session(
             detail="account_id is required for paper strategy sessions.",
         )
 
-    integration = resolve_integration(
+    context = trading_context_service.resolve(
         db,
-        current_user.id,
+        user_id=current_user.id,
+        trading_mode=state_for_user["trading_mode"],
         integration_id=config.integration_id,
+        account_id=config.account_id,
+        symbol=config.symbol,
         required_capabilities={IntegrationCapability.BROKER_TRADING},
+        require_integration=True,
+        require_account=True,
+        require_contract=True,
     )
-    if not integration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Integration not found for current user.",
-        )
+    integration = context.integration
 
     state_for_user["stop"] = False
     session_id = uuid4().hex
@@ -170,8 +172,8 @@ def create_bot_session(
         db,
         user_id=current_user.id,
         integration_id=integration.id,
-        account_id=config.account_id,
-        symbol=config.symbol,
+        account_id=context.account_id,
+        symbol=context.symbol,
         trading_mode=state_for_user["trading_mode"],
         parameters={
             "buy_threshold": state_for_user["buy_threshold"],
@@ -181,9 +183,9 @@ def create_bot_session(
     )
     BOT_SESSIONS[session_id] = {
         "user_id": current_user.id,
-        "symbol": config.symbol,
+        "symbol": context.symbol,
         "integration_id": integration.id,
-        "account_id": config.account_id,
+        "account_id": context.account_id,
         "strategy_config_id": strategy_config.id,
     }
     log_event(
@@ -192,8 +194,8 @@ def create_bot_session(
         user_id=current_user.id,
         session_id=session_id,
         integration_id=integration.id,
-        account_id=config.account_id,
-        symbol=config.symbol,
+        account_id=context.account_id,
+        symbol=context.symbol,
         trading_mode=state_for_user["trading_mode"],
         auto_trade=state_for_user["auto_trade"],
     )
@@ -210,21 +212,26 @@ def create_strategy_config_endpoint(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    integration = resolve_integration(
+    context = trading_context_service.resolve(
         db,
-        current_user.id,
+        user_id=current_user.id,
+        trading_mode=request.trading_mode,
         integration_id=request.integration_id,
+        account_id=request.account_id,
+        symbol=request.symbol,
         required_capabilities={IntegrationCapability.BROKER_TRADING},
+        require_integration=True,
+        require_account=True,
+        require_contract=True,
     )
-    if not integration:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found for current user.")
+    integration = context.integration
     config = create_strategy_config(
         db,
         user_id=current_user.id,
         integration_id=integration.id,
-        account_id=request.account_id,
-        symbol=request.symbol,
-        trading_mode=request.trading_mode,
+        account_id=context.account_id,
+        symbol=context.symbol,
+        trading_mode=context.trading_mode,
         parameters=request.parameters,
     )
     return serialize_strategy_config(config)
@@ -273,29 +280,30 @@ async def execute_trade_endpoint(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user_model),
 ):
-    integration = None
-    if order.integration_id is not None:
-        integration = resolve_integration(
-            db,
-            current_user.id,
-            integration_id=order.integration_id,
-            required_capabilities={IntegrationCapability.BROKER_TRADING},
-        )
-        if not integration:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Integration not found for current user.",
-            )
+    context = trading_context_service.resolve(
+        db,
+        user_id=current_user.id,
+        trading_mode=order.trading_mode,
+        integration_id=order.integration_id,
+        account_id=order.account_id,
+        symbol=order.symbol,
+        required_capabilities={IntegrationCapability.BROKER_TRADING},
+        require_integration=False,
+        require_account=False,
+        require_contract=True,
+        allow_paper_fallback=True,
+    )
+    integration = context.integration
 
     intent = build_order_intent(
         user_id=current_user.id,
-        symbol=order.symbol,
+        symbol=context.symbol,
         side=order.side,
         quantity=order.quantity,
-        trading_mode=order.trading_mode,
+        trading_mode=context.trading_mode,
         order_type=order.order_type,
         integration_id=integration.id if integration else None,
-        account_id=order.account_id,
+        account_id=context.account_id,
         idempotency_key=order.idempotency_key,
         source="manual",
     )
@@ -422,15 +430,22 @@ def run_bot(
                 yield log("User not found for bot session.")
                 return
 
-            integration = resolve_integration(
+            context = trading_context_service.resolve(
                 db,
-                user.id,
+                user_id=user.id,
+                trading_mode=session_state.get("trading_mode", "paper"),
                 integration_id=integration_id or session.get("integration_id"),
+                account_id=session.get("account_id"),
+                symbol=symbol,
                 required_capabilities={
                     IntegrationCapability.BROKER_TRADING,
                     IntegrationCapability.MARKET_DATA,
                 },
+                require_integration=True,
+                require_account=True,
+                require_contract=True,
             )
+            integration = context.integration
 
             adapter = get_adapter(integration) if integration else None
 
@@ -521,7 +536,7 @@ def run_bot(
                             quantity=quantity,
                             trading_mode=session_state.get("trading_mode", "paper"),
                             integration_id=integration.id if integration else None,
-                            account_id=session.get("account_id"),
+                            account_id=context.account_id,
                             idempotency_key=idempotency_key,
                             source="bot",
                             reference_price=float(df["close"].iloc[-1]),
