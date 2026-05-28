@@ -110,6 +110,51 @@ class PaperPosition(Base):
     )
 
 
+class StrategyConfig(Base):
+    __tablename__ = "strategy_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(String, nullable=False)
+    symbol = Column(String, nullable=False, index=True)
+    trading_mode = Column(String, nullable=False, default="paper")
+    strategy_name = Column(String, nullable=False, default="rsi-threshold-v1")
+    strategy_version = Column(String, nullable=False, default="1.0.0")
+    parameters = Column(JSON, nullable=False)
+    bot_session_id = Column(String, nullable=True, index=True)
+    enabled = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_strategy_configs_user_symbol", "user_id", "symbol"),
+    )
+
+
+class StrategySignal(Base):
+    __tablename__ = "strategy_signals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    strategy_config_id = Column(Integer, ForeignKey("strategy_configs.id", ondelete="CASCADE"), nullable=False, index=True)
+    paper_order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(String, nullable=False)
+    symbol = Column(String, nullable=False, index=True)
+    signal = Column(String, nullable=False)
+    status = Column(String, nullable=False, index=True)
+    reason = Column(Text, nullable=True)
+    guardrail_decision = Column(JSON, nullable=True)
+    market_snapshot = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_strategy_signals_user_config", "user_id", "strategy_config_id"),
+        Index("ix_strategy_signals_user_created", "user_id", "created_at"),
+    )
+
+
 class UserCreate(BaseModel):
     username: str
     email: str

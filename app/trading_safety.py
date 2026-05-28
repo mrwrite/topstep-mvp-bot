@@ -27,6 +27,7 @@ class OrderIntent:
     account_id: str | None = None
     idempotency_key: str | None = None
     source: str = "manual"
+    reference_price: float | None = None
 
 
 def normalize_mode(mode: str | None) -> str:
@@ -82,6 +83,7 @@ def build_order_intent(
     account_id: str | None = None,
     idempotency_key: str | None = None,
     source: str = "manual",
+    reference_price: float | None = None,
 ) -> OrderIntent:
     if not symbol or not symbol.strip():
         raise HTTPException(
@@ -113,6 +115,7 @@ def build_order_intent(
         account_id=account_id,
         idempotency_key=idempotency_key,
         source=source,
+        reference_price=reference_price,
     )
 
 
@@ -135,5 +138,6 @@ def simulate_paper_order(intent: OrderIntent) -> dict[str, Any]:
             "account_id": intent.account_id,
             "source": intent.source,
             "idempotency_key": intent.idempotency_key,
+            "reference_price": intent.reference_price,
         },
     }

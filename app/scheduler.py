@@ -17,8 +17,15 @@ from app.integrations_service import resolve_integration
 from app.providers.factory import get_adapter
 from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability
-from app.strategy import check_trade_signal
 from app.paper_execution import execute_paper_order, get_paper_order, list_open_paper_orders, list_paper_positions
+from app.strategy_engine import (
+    create_strategy_config,
+    mark_signal_executed,
+    paper_performance_metrics,
+    record_strategy_signal,
+    serialize_strategy_config,
+    serialize_strategy_signal,
+)
 from app.trading_safety import build_order_intent
 from logger import log_trade
 
@@ -60,6 +67,7 @@ class BotConfig(BaseModel):
 class BotSessionCreate(BotConfig):
     symbol: str = "RTYZ4"
     integration_id: int | None = None
+    account_id: str | None = None
 
 
 class TradeRequest(BaseModel):
@@ -71,6 +79,14 @@ class TradeRequest(BaseModel):
     order_type: str = "market"
     account_id: str | None = None
     idempotency_key: str | None = None
+
+
+class StrategyConfigRequest(BaseModel):
+    symbol: str
+    integration_id: int
+    account_id: str
+    trading_mode: str = "paper"
+    parameters: dict | None = None
 
 
 def apply_bot_config(state: dict, config: BotConfig, user_id: int) -> None:
@@ -121,29 +137,122 @@ def create_bot_session(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    if config.integration_id is not None:
-        integration = resolve_integration(
-            db,
-            current_user.id,
-            integration_id=config.integration_id,
-            required_capabilities={IntegrationCapability.BROKER_TRADING},
-        )
-        if not integration:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Integration not found for current user.",
-            )
-
     state_for_user = get_bot_state(current_user.id)
     apply_bot_config(state_for_user, config, current_user.id)
+
+    if config.integration_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="integration_id is required for paper strategy sessions.",
+        )
+    if not config.account_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="account_id is required for paper strategy sessions.",
+        )
+
+    integration = resolve_integration(
+        db,
+        current_user.id,
+        integration_id=config.integration_id,
+        required_capabilities={IntegrationCapability.BROKER_TRADING},
+    )
+    if not integration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Integration not found for current user.",
+        )
+
     state_for_user["stop"] = False
     session_id = uuid4().hex
+    strategy_config = create_strategy_config(
+        db,
+        user_id=current_user.id,
+        integration_id=integration.id,
+        account_id=config.account_id,
+        symbol=config.symbol,
+        trading_mode=state_for_user["trading_mode"],
+        parameters={
+            "buy_threshold": state_for_user["buy_threshold"],
+            "sell_threshold": state_for_user["sell_threshold"],
+        },
+        bot_session_id=session_id,
+    )
     BOT_SESSIONS[session_id] = {
         "user_id": current_user.id,
         "symbol": config.symbol,
-        "integration_id": config.integration_id,
+        "integration_id": integration.id,
+        "account_id": config.account_id,
+        "strategy_config_id": strategy_config.id,
     }
-    return {"session_id": session_id, "trading_mode": state_for_user["trading_mode"]}
+    return {
+        "session_id": session_id,
+        "trading_mode": state_for_user["trading_mode"],
+        "strategy_config": serialize_strategy_config(strategy_config),
+    }
+
+
+@router.post("/strategy-configs")
+def create_strategy_config_endpoint(
+    request: StrategyConfigRequest,
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+):
+    integration = resolve_integration(
+        db,
+        current_user.id,
+        integration_id=request.integration_id,
+        required_capabilities={IntegrationCapability.BROKER_TRADING},
+    )
+    if not integration:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found for current user.")
+    config = create_strategy_config(
+        db,
+        user_id=current_user.id,
+        integration_id=integration.id,
+        account_id=request.account_id,
+        symbol=request.symbol,
+        trading_mode=request.trading_mode,
+        parameters=request.parameters,
+    )
+    return serialize_strategy_config(config)
+
+
+@router.get("/strategy-configs")
+def list_strategy_configs(
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+):
+    configs = (
+        db.query(models.StrategyConfig)
+        .filter(models.StrategyConfig.user_id == current_user.id)
+        .order_by(models.StrategyConfig.created_at.desc())
+        .all()
+    )
+    return [serialize_strategy_config(config) for config in configs]
+
+
+@router.get("/strategy-signals")
+def list_strategy_signals(
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+):
+    signals = (
+        db.query(models.StrategySignal)
+        .filter(models.StrategySignal.user_id == current_user.id)
+        .order_by(models.StrategySignal.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return [serialize_strategy_signal(signal) for signal in signals]
+
+
+@router.get("/strategy-metrics")
+def get_strategy_metrics(
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+):
+    return paper_performance_metrics(db, user_id=current_user.id)
 
 
 @router.post("/execute-trade")
@@ -320,6 +429,18 @@ def run_bot(
             if not isinstance(adapter, TopStepXAdapter):
                 yield log("Market data is not implemented for the selected provider.")
                 return
+
+            strategy_config = (
+                db.query(models.StrategyConfig)
+                .filter(
+                    models.StrategyConfig.user_id == user.id,
+                    models.StrategyConfig.id == session.get("strategy_config_id"),
+                )
+                .first()
+            )
+            if not strategy_config:
+                yield log("Strategy config not found for bot session.")
+                return
         finally:
             db.close()
 
@@ -357,12 +478,26 @@ def run_bot(
                     missing = set(required_cols) - set(indicators.columns)
                     raise Exception(f"Missing indicator columns in DataFrame: {missing}")
 
-                signal = check_trade_signal(
-                    indicators, buy_threshold=buy_threshold, sell_threshold=sell_threshold
-                )
+                signal_db = database.SessionLocal()
+                try:
+                    strategy_config = (
+                        signal_db.query(models.StrategyConfig)
+                        .filter(
+                            models.StrategyConfig.user_id == session["user_id"],
+                            models.StrategyConfig.id == session.get("strategy_config_id"),
+                        )
+                        .first()
+                    )
+                    if not strategy_config:
+                        yield log("Strategy config not found for bot session.")
+                        break
+                    signal_record = record_strategy_signal(signal_db, config=strategy_config, indicators=indicators)
+                    signal = signal_record.signal
+                finally:
+                    signal_db.close()
                 yield log(f"Latest Close: {df['close'].iloc[-1]:.2f} | Signal: {signal}")
 
-                if signal in {"BUY", "SELL"}:
+                if signal in {"BUY", "SELL"} and signal_record.status == "emitted":
                     yield log(f"{signal} signal detected.")
                     signal_time = indicators.index[-1].isoformat()
                     idempotency_key = f"bot:{session_id}:{symbol}:{signal}:{signal_time}"
@@ -374,12 +509,19 @@ def run_bot(
                             quantity=quantity,
                             trading_mode=session_state.get("trading_mode", "paper"),
                             integration_id=integration.id if integration else None,
+                            account_id=session.get("account_id"),
                             idempotency_key=idempotency_key,
                             source="bot",
+                            reference_price=float(df["close"].iloc[-1]),
                         )
                         order_db = database.SessionLocal()
                         try:
                             response = execute_paper_order(order_db, intent)
+                            mark_signal_executed(
+                                order_db,
+                                signal_id=signal_record.id,
+                                paper_order_id=response["order"]["id"],
+                            )
                         finally:
                             order_db.close()
                         yield log(f"Paper trade response: {response}")
@@ -402,7 +544,10 @@ def run_bot(
                         }
                         yield log(json.dumps(prompt))
                 else:
-                    yield log("No trade signal at this time.")
+                    if signal_record.status == "suppressed":
+                        yield log(f"Strategy signal suppressed: {signal_record.reason}")
+                    else:
+                        yield log("No trade signal at this time.")
 
             except Exception as exc:
                 yield log(f"Error during bot loop: {exc}")

@@ -7,6 +7,7 @@ type Integration = {
   display_name: string;
   provider: string;
   status: string;
+  metadata?: Record<string, unknown>;
 };
 
 type ActiveIntegrationResponse = {

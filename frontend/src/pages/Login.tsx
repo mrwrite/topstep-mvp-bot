@@ -48,11 +48,11 @@ function Login() {
       <div className="login-panel">
         <div className="login-header">
           <div>
-            <p className="eyebrow">Trading Bot</p>
+            <p className="eyebrow">Trading workspace</p>
             <h1>Sign in</h1>
-            <p className="muted">Connect to monitor the RSI bot and manage sessions.</p>
+            <p className="muted">Open the paper-trading dashboard and review broker setup.</p>
           </div>
-          <span className="pill status success">Secure</span>
+          <span className="pill warning">Live disabled</span>
         </div>
         {loggedOut && (
           <div className="inline-alert" role="status" aria-live="polite">
@@ -93,7 +93,7 @@ function Login() {
             disabled={isLoading}
           />
           <button type="submit" className="primary" disabled={isLoading}>
-            {isLoading ? 'Logging in…' : 'Login'}
+            {isLoading ? 'Logging in...' : 'Login'}
           </button>
         </form>
         <p className="tiny muted">API: {API_BASE_URL}</p>

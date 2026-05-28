@@ -57,4 +57,6 @@ def test_run_backtest_handles_fallback(monkeypatch):
     )
 
     assert summary.patterns
+    assert summary.assumptions
+    assert "do not predict" in summary.assumptions[-1]
     assert summary.signals["hold"] + summary.signals["buy"] + summary.signals["sell"] == len(closes)

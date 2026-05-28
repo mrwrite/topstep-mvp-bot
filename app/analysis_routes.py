@@ -52,6 +52,7 @@ def backtest(request: BacktestRequest) -> Dict[str, Any]:
             "losses": summary.losses,
             "signals": summary.signals,
             "patterns": summary.patterns,
+            "assumptions": summary.assumptions,
         }
     except Exception as exc:  # noqa: BLE001 - surfaced as API error
         raise HTTPException(status_code=400, detail=str(exc)) from exc

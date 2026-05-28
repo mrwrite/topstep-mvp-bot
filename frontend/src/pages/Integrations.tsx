@@ -48,7 +48,7 @@ const emptyForm: FormState = {
   display_name: '',
   provider: 'TOPSTEPX',
   status: 'active',
-  environment: '',
+  environment: 'paper',
   accountId: '',
   baseUrl: '',
   apiKey: '',
@@ -56,6 +56,14 @@ const emptyForm: FormState = {
   refreshToken: '',
   userName: '',
   webhookSecret: ''
+};
+
+const capabilityLabel = (capability: string) => {
+  if (capability === 'BROKER_TRADING') return 'Broker';
+  if (capability === 'MARKET_DATA') return 'Market data';
+  if (capability === 'ACCOUNT_INFO') return 'Accounts';
+  if (capability === 'SIGNALS') return 'Signals';
+  return capability;
 };
 
 function Integrations() {
@@ -76,16 +84,8 @@ function Integrations() {
       const res = await api.get('/integrations');
       setIntegrations(res.data ?? []);
     } catch (err) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const response = (err as { response?: { status?: number } }).response;
-        if (response?.status === 401) {
-          localStorage.removeItem('token');
-          navigate('/', { replace: true, state: { expired: true } });
-          return;
-        }
-      }
       console.error('Failed to load integrations', err);
-      setError('Unable to load integrations.');
+      setError('Unable to load integrations. Sign in again if your session expired.');
     }
   };
 
@@ -104,6 +104,19 @@ function Integrations() {
     refreshActiveIntegration();
   }, [refreshActiveIntegration]);
 
+  const providerMeta = (provider: string) =>
+    providerInfo.find(item => item.provider === provider) ?? {
+      provider,
+      capabilities: [],
+      implemented_capabilities: [],
+      roadmap_capabilities: []
+    };
+
+  const selectedProvider = providerMeta(form.provider);
+  const roadmapOnly =
+    selectedProvider.roadmap_capabilities.length > 0 &&
+    selectedProvider.implemented_capabilities.length === 0;
+
   const startCreate = () => {
     setForm(emptyForm);
     setEditingId(null);
@@ -118,8 +131,8 @@ function Integrations() {
       display_name: integration.display_name,
       provider: integration.provider,
       status: integration.status,
-      environment: integration.metadata?.environment ?? '',
-      accountId: integration.metadata?.accountId ?? '',
+      environment: integration.metadata?.environment ?? 'paper',
+      accountId: integration.metadata?.account_id ?? integration.metadata?.accountId ?? '',
       baseUrl: integration.metadata?.baseUrl ?? '',
       apiKey: '',
       apiSecret: '',
@@ -132,7 +145,7 @@ function Integrations() {
   const buildMetadata = () => {
     const metadata: Record<string, string> = {};
     if (form.environment) metadata.environment = form.environment;
-    if (form.accountId) metadata.accountId = form.accountId;
+    if (form.accountId) metadata.account_id = form.accountId;
     if (form.baseUrl) metadata.baseUrl = form.baseUrl;
     return metadata;
   };
@@ -192,12 +205,21 @@ function Integrations() {
       await api.delete(`/integrations/${integrationId}`);
       await loadIntegrations();
       await refreshActiveIntegration();
-      if (editingId === integrationId) {
-        startCreate();
-      }
+      if (editingId === integrationId) startCreate();
     } catch (err) {
       console.error('Failed to delete integration', err);
       setError('Could not delete integration.');
+    }
+  };
+
+  const activateIntegration = async (integrationId: number) => {
+    try {
+      await setActiveIntegrationAndLoadContracts(integrationId);
+      setActivationNotice('Active integration updated. Provider contracts refreshed.');
+      window.setTimeout(() => setActivationNotice(''), 2500);
+    } catch (err) {
+      console.error('Failed to activate integration', err);
+      setError('Unable to activate integration. It may not support provider contracts yet.');
     }
   };
 
@@ -208,34 +230,17 @@ function Integrations() {
 
   const integrationsEmpty = useMemo(() => integrations.length === 0, [integrations]);
   const activeId = activeIntegration?.id;
-  const implementedCapabilitiesFor = (provider: string) =>
-    providerInfo.find(item => item.provider === provider)?.implemented_capabilities ?? [];
-  const roadmapCapabilitiesFor = (provider: string) =>
-    providerInfo.find(item => item.provider === provider)?.roadmap_capabilities ?? [];
-  const isActive = (integrationId: number) => activeId === integrationId;
-  const formatCapabilities = (caps: string[]) =>
-    caps.map(cap => (cap === 'BROKER_TRADING' ? 'Broker' : cap === 'SIGNALS' ? 'Signals' : cap)).join(' · ');
-
-  const activateIntegration = async (integrationId: number) => {
-    try {
-      await setActiveIntegrationAndLoadContracts(integrationId);
-      setActivationNotice('Active integration updated. Contracts refreshed.');
-      window.setTimeout(() => setActivationNotice(''), 2500);
-    } catch (err) {
-      console.error('Failed to activate integration', err);
-      setError('Unable to activate integration.');
-    }
-  };
+  const formatCapabilities = (caps: string[]) => caps.map(capabilityLabel).join(' / ');
 
   return (
     <div className="dashboard-shell">
       <header className="topbar">
         <div className="topbar-left">
           <div>
-            <p className="eyebrow">Trading Bot</p>
+            <p className="eyebrow">Trading workspace</p>
             <div className="app-title">Broker Integrations</div>
           </div>
-          <span className="pill subtle">setup</span>
+          <span className="pill warning">Paper setup</span>
         </div>
         <div className="topbar-center">
           <Link to="/dashboard" className="badge link">
@@ -251,34 +256,38 @@ function Integrations() {
         </div>
       </header>
 
+      <div className="mode-banner">
+        <div>
+          <p className="eyebrow">Onboarding</p>
+          <h2>Connect a broker or signal source</h2>
+        </div>
+        <p className="muted">
+          Integrations are used for paper-session context, account lookup, contracts, and signal intake.
+          Live execution remains disabled.
+        </p>
+      </div>
+
       <div className="layout integrations-layout">
         <aside className="panel card">
           <div className="panel-header">
             <div>
-            <p className="eyebrow">Broker setup</p>
-            <h2>{editingId ? 'Edit integration' : 'Add integration'}</h2>
+              <p className="eyebrow">Broker setup</p>
+              <h2>{editingId ? 'Edit integration' : 'Add integration'}</h2>
             </div>
             <button type="button" className="ghost compact" onClick={startCreate}>
               New
             </button>
           </div>
-          {error && (
-            <div className="inline-alert danger" role="alert">
-              {error}
-            </div>
-          )}
-          {activationNotice && (
-            <div className="inline-alert" role="status">
-              {activationNotice}
-            </div>
-          )}
+          {error && <div className="inline-alert danger">{error}</div>}
+          {activationNotice && <div className="inline-alert">{activationNotice}</div>}
+
           <form className="integration-form" onSubmit={handleSubmit}>
             <label htmlFor="display_name">Display name</label>
             <input
               id="display_name"
               value={form.display_name}
               onChange={e => setForm({ ...form, display_name: e.target.value })}
-              placeholder="Broker - Main"
+              placeholder="Broker - Paper"
               required
             />
 
@@ -295,39 +304,42 @@ function Integrations() {
                 </option>
               ))}
             </select>
+            {roadmapOnly && (
+              <div className="inline-alert warning">
+                This provider is a setup preview. Execution remains unavailable until an adapter is implemented and tested.
+              </div>
+            )}
+
+            <div className="capability-strip">
+              <span className="pill subtle">
+                Implemented: {formatCapabilities(selectedProvider.implemented_capabilities) || 'None'}
+              </span>
+              <span className="pill subtle">
+                Roadmap: {formatCapabilities(selectedProvider.roadmap_capabilities) || 'None'}
+              </span>
+            </div>
 
             <label htmlFor="status">Status</label>
-            <select
-              id="status"
-              value={form.status}
-              onChange={e => setForm({ ...form, status: e.target.value })}
-            >
+            <select id="status" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
               <option value="active">Active</option>
               <option value="disabled">Disabled</option>
               <option value="error">Error</option>
             </select>
 
-            <div className="form-divider">Active integration</div>
-            <p className="muted tiny">
-              {activeIntegration
-                ? `Current active integration: ${activeIntegration.display_name}`
-                : 'No active integration selected yet.'}
-            </p>
-
-            <div className="form-divider">Metadata</div>
+            <div className="form-divider">Paper context</div>
             <label htmlFor="environment">Environment</label>
             <input
               id="environment"
               value={form.environment}
               onChange={e => setForm({ ...form, environment: e.target.value })}
-              placeholder="sandbox / paper / live"
+              placeholder="paper / demo / sandbox"
             />
-            <label htmlFor="accountId">Account ID</label>
+            <label htmlFor="accountId">Saved account ID</label>
             <input
               id="accountId"
               value={form.accountId}
               onChange={e => setForm({ ...form, accountId: e.target.value })}
-              placeholder="A-123"
+              placeholder="Paper account or provider account id"
             />
             <label htmlFor="baseUrl">Base URL</label>
             <input
@@ -338,12 +350,7 @@ function Integrations() {
             />
 
             <div className="form-divider">Credentials</div>
-            {hasStoredCredentials && !editingId && (
-              <p className="muted tiny">Credentials are stored securely.</p>
-            )}
-            {hasStoredCredentials && editingId && (
-              <p className="muted tiny">Credentials are stored. Enter new values to rotate.</p>
-            )}
+            {hasStoredCredentials && <p className="muted tiny">Credentials are stored. Enter new values to rotate.</p>}
             {form.provider === 'TOPSTEPX' && (
               <>
                 <label htmlFor="userName">Username</label>
@@ -353,63 +360,45 @@ function Integrations() {
                   onChange={e => setForm({ ...form, userName: e.target.value })}
                   placeholder="account username"
                 />
-                <label htmlFor="apiKey">API Key</label>
+                <label htmlFor="apiKey">API key</label>
                 <input
                   id="apiKey"
                   type="password"
                   value={form.apiKey}
                   onChange={e => setForm({ ...form, apiKey: e.target.value })}
-                  placeholder="••••••••"
+                  placeholder="stored securely"
                 />
               </>
             )}
 
             {form.provider === 'TRADINGVIEW' && (
               <>
-                <label htmlFor="webhookSecret">Webhook Secret (optional)</label>
+                <label htmlFor="webhookSecret">Webhook secret</label>
                 <input
                   id="webhookSecret"
                   type="password"
                   value={form.webhookSecret}
                   onChange={e => setForm({ ...form, webhookSecret: e.target.value })}
-                  placeholder="••••••••"
+                  placeholder="stored securely"
                 />
-                <p className="muted tiny">Signals only. No broker trading credentials required.</p>
+                <p className="muted tiny">Signals only. No broker credentials required.</p>
               </>
             )}
 
             {form.provider !== 'TOPSTEPX' && form.provider !== 'TRADINGVIEW' && (
               <>
-                <p className="muted tiny">This broker is on the roadmap and unavailable for trading.</p>
-                <label htmlFor="apiKey">API Key</label>
-                <input
-                  id="apiKey"
-                  type="password"
-                  value={form.apiKey}
-                  onChange={e => setForm({ ...form, apiKey: e.target.value })}
-                  placeholder="••••••••"
-                />
-                <label htmlFor="apiSecret">API Secret</label>
-                <input
-                  id="apiSecret"
-                  type="password"
-                  value={form.apiSecret}
-                  onChange={e => setForm({ ...form, apiSecret: e.target.value })}
-                  placeholder="••••••••"
-                />
-                <label htmlFor="refreshToken">Refresh Token</label>
-                <input
-                  id="refreshToken"
-                  type="password"
-                  value={form.refreshToken}
-                  onChange={e => setForm({ ...form, refreshToken: e.target.value })}
-                  placeholder="••••••••"
-                />
+                <p className="muted tiny">Roadmap provider. Saved credentials will not enable execution.</p>
+                <label htmlFor="apiKey">API key</label>
+                <input id="apiKey" type="password" value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder="stored securely" />
+                <label htmlFor="apiSecret">API secret</label>
+                <input id="apiSecret" type="password" value={form.apiSecret} onChange={e => setForm({ ...form, apiSecret: e.target.value })} placeholder="stored securely" />
+                <label htmlFor="refreshToken">Refresh token</label>
+                <input id="refreshToken" type="password" value={form.refreshToken} onChange={e => setForm({ ...form, refreshToken: e.target.value })} placeholder="stored securely" />
               </>
             )}
 
             <button type="submit" className="primary" disabled={isLoading}>
-              {isLoading ? 'Saving…' : editingId ? 'Update integration' : 'Save integration'}
+              {isLoading ? 'Saving...' : editingId ? 'Update integration' : 'Save integration'}
             </button>
           </form>
         </aside>
@@ -426,66 +415,64 @@ function Integrations() {
           {integrationsEmpty ? (
             <div className="empty-state">
               <h3>No integrations yet</h3>
-              <p className="muted">
-                Add your first broker or signal integration to enable paper-mode sessions and alerts.
-              </p>
+              <p className="muted">Add a broker or signal integration to enable paper sessions and alerts.</p>
               <button type="button" className="primary" onClick={startCreate}>
                 Add integration
               </button>
             </div>
           ) : (
             <div className="integration-cards">
-              {integrations.map(integration => (
-                <div key={integration.id} className="integration-card">
-                  <div>
-                    <h3>{integration.display_name}</h3>
-                    <p className="muted tiny">
-                      {integration.provider} · {integration.status}
-                    </p>
-                    {formatCapabilities(implementedCapabilitiesFor(integration.provider)) && (
+              {integrations.map(integration => {
+                const info = providerMeta(integration.provider);
+                const isRoadmapOnly =
+                  info.roadmap_capabilities.length > 0 && info.implemented_capabilities.length === 0;
+                return (
+                  <div key={integration.id} className="integration-card">
+                    <div>
+                      <div className="card-title-row">
+                        <h3>{integration.display_name}</h3>
+                        {isRoadmapOnly && <span className="pill warning">Roadmap</span>}
+                      </div>
                       <p className="muted tiny">
-                        Implemented: {formatCapabilities(implementedCapabilitiesFor(integration.provider))}
+                        {integration.provider} / {integration.status}
                       </p>
-                    )}
-                    {formatCapabilities(roadmapCapabilitiesFor(integration.provider)) && (
                       <p className="muted tiny">
-                        Roadmap: {formatCapabilities(roadmapCapabilitiesFor(integration.provider))}
+                        Implemented: {formatCapabilities(info.implemented_capabilities) || 'None'}
                       </p>
-                    )}
-                    <div className="meta-row">
-                      <span>Environment:</span>
-                      <strong>{integration.metadata?.environment ?? '—'}</strong>
+                      <p className="muted tiny">
+                        Roadmap: {formatCapabilities(info.roadmap_capabilities) || 'None'}
+                      </p>
+                      <div className="meta-row">
+                        <span>Environment:</span>
+                        <strong>{integration.metadata?.environment ?? '-'}</strong>
+                      </div>
+                      <div className="meta-row">
+                        <span>Saved account:</span>
+                        <strong>{integration.metadata?.account_id ?? integration.metadata?.accountId ?? '-'}</strong>
+                      </div>
+                      <div className="meta-row">
+                        <span>Credentials:</span>
+                        <strong>{integration.has_credentials ? 'Stored' : 'Missing'}</strong>
+                      </div>
                     </div>
-                    <div className="meta-row">
-                      <span>Account:</span>
-                      <strong>{integration.metadata?.accountId ?? '—'}</strong>
-                    </div>
-                  </div>
-                  <div className="integration-actions">
-                    {isActive(integration.id) ? (
-                      <span className="pill subtle">Active</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="ghost compact"
-                        onClick={() => activateIntegration(integration.id)}
-                      >
-                        Set active
+                    <div className="integration-actions">
+                      {activeId === integration.id ? (
+                        <span className="pill subtle">Active</span>
+                      ) : (
+                        <button type="button" className="ghost compact" onClick={() => activateIntegration(integration.id)}>
+                          Set active
+                        </button>
+                      )}
+                      <button type="button" className="ghost compact" onClick={() => startEdit(integration)}>
+                        Edit
                       </button>
-                    )}
-                    <button type="button" className="ghost compact" onClick={() => startEdit(integration)}>
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost compact danger"
-                      onClick={() => handleDelete(integration.id)}
-                    >
-                      Delete
-                    </button>
+                      <button type="button" className="ghost compact danger" onClick={() => handleDelete(integration.id)}>
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

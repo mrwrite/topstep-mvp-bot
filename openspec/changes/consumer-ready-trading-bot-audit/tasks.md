@@ -46,29 +46,29 @@
 
 ## 4. Phase 4: Strategy and Paper-Trading Validation
 
-- [ ] 4.1 Rename and document the current strategy as `rsi-threshold-v1`.
-- [ ] 4.2 Persist versioned strategy configurations per user, account, mode, symbol scope, and bot session.
-- [ ] 4.3 Remove misleading moving-average/momentum claims until those rules are actually part of signal generation.
-- [ ] 4.4 Add data-quality gates for stale bars, missing candles, insufficient sample size, NaN indicators, and unsupported resolutions.
+- [x] 4.1 Rename and document the current strategy as `rsi-threshold-v1`.
+- [x] 4.2 Persist versioned strategy configurations per user, account, mode, symbol scope, and bot session.
+- [x] 4.3 Remove misleading moving-average/momentum claims until those rules are actually part of signal generation.
+- [x] 4.4 Add data-quality gates for stale bars, missing candles, insufficient sample size, NaN indicators, and unsupported resolutions.
 - [ ] 4.5 Build a paper execution adapter with simulated orders, fills, positions, equity, and PnL.
-- [ ] 4.6 Add strategy guardrails for cooldown, max signals per period, no-trade windows, and risk-policy binding.
+- [x] 4.6 Add strategy guardrails for cooldown, max signals per period, no-trade windows, and risk-policy binding.
 - [ ] 4.7 Improve backtesting with slippage, commissions, tick value, contract metadata, drawdown, exposure, and simulation assumptions.
-- [ ] 4.8 Add clear warnings that backtest and paper results do not guarantee live performance.
-- [ ] 4.9 Add tests comparing strategy behavior in live-blocked, paper, and backtest modes.
+- [x] 4.8 Add clear warnings that backtest and paper results do not guarantee live performance.
+- [x] 4.9 Add tests comparing strategy behavior in live-blocked, paper, and backtest modes.
 
 ## 5. Phase 5: Consumer UX Polish
 
-- [ ] 5.1 Replace hardcoded TopStep product chrome with provider-neutral product terminology while keeping provider-specific labels where relevant.
+- [x] 5.1 Replace hardcoded TopStep product chrome with provider-neutral product terminology while keeping provider-specific labels where relevant.
 - [ ] 5.2 Add dashboard readiness checklist for provider, credentials, account, contract, market data, risk policy, mode, and kill switch state.
-- [ ] 5.3 Add explicit paper/demo/live/signal-only mode selector and persistent mode banner.
-- [ ] 5.4 Add account selector and contract detail selector tied to the selected provider and trading mode.
-- [ ] 5.5 Disable trading controls when readiness prerequisites are missing or provider capability is unavailable.
+- [x] 5.3 Add explicit paper/demo/live/signal-only mode selector and persistent mode banner.
+- [x] 5.4 Add account selector and contract detail selector tied to the selected provider and trading mode.
+- [x] 5.5 Disable trading controls when readiness prerequisites are missing or provider capability is unavailable.
 - [ ] 5.6 Add live-trading acknowledgement and confirmation UX with stored acknowledgement records.
-- [ ] 5.7 Improve integration cards with implemented/roadmap capability labels, health status, credential status, and account availability.
-- [ ] 5.8 Replace generic error messages with actionable provider/risk/order messages from normalized backend errors.
-- [ ] 5.9 Fix corrupted text/encoding artifacts in UI logs, labels, README, and source comments.
-- [ ] 5.10 Remove duplicated analysis/backtest result sections from the dashboard.
-- [ ] 5.11 Add robust loading and empty states for auth, integrations, providers, accounts, contracts, orders, bot sessions, analysis, and backtests.
+- [x] 5.7 Improve integration cards with implemented/roadmap capability labels, health status, credential status, and account availability.
+- [x] 5.8 Replace generic error messages with actionable provider/risk/order messages from normalized backend errors.
+- [x] 5.9 Fix corrupted text/encoding artifacts in UI logs, labels, README, and source comments.
+- [x] 5.10 Remove duplicated analysis/backtest result sections from the dashboard.
+- [x] 5.11 Add robust loading and empty states for auth, integrations, providers, accounts, contracts, orders, bot sessions, analysis, and backtests.
 - [ ] 5.12 Add responsive and accessibility tests for dashboard, integrations, auth, and emergency stop controls.
 
 ## 6. Phase 6: Production Readiness

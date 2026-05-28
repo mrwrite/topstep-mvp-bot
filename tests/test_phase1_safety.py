@@ -141,10 +141,11 @@ def test_bot_session_is_user_scoped_and_live_mode_is_blocked():
     foreign_integration = client.post(
         "/scheduler/bot-sessions",
         json={
-            "symbol": "ES",
-            "trading_mode": "paper",
-            "integration_id": alice_integration["id"],
-        },
+                "symbol": "ES",
+                "trading_mode": "paper",
+                "integration_id": alice_integration["id"],
+                "account_id": "paper-account-1",
+            },
         headers=auth_headers(bob_token),
     )
     assert foreign_integration.status_code == 404
@@ -156,6 +157,7 @@ def test_bot_session_is_user_scoped_and_live_mode_is_blocked():
             "trading_mode": "paper",
             "auto_trade": True,
             "integration_id": alice_integration["id"],
+            "account_id": "paper-account-1",
         },
         headers=auth_headers(token),
     )

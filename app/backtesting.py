@@ -42,6 +42,7 @@ class BacktestSummary:
     losses: int
     signals: Dict[str, int]
     patterns: Dict[str, Any]
+    assumptions: List[str]
 
 
 class BacktestError(Exception):
@@ -226,6 +227,11 @@ def run_backtest(
         losses=losses,
         signals=signals_summary,
         patterns=pattern_summary,
+        assumptions=[
+            "Strategy: rsi-threshold-v1 only. Moving averages and momentum are not confirmation signals.",
+            "No slippage, commissions, margin, liquidity constraints, or exchange fees are modeled.",
+            "Backtest and paper results do not predict or guarantee live trading performance.",
+        ],
     )
 
 

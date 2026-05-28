@@ -73,11 +73,11 @@ function Register() {
       <div className="login-panel">
         <div className="login-header">
           <div>
-            <p className="eyebrow">Trading Bot</p>
+            <p className="eyebrow">Trading workspace</p>
             <h1>Create account</h1>
-            <p className="muted">Set up your credentials and connect integrations.</p>
+            <p className="muted">Create an account, add an integration, then start in paper mode.</p>
           </div>
-          <span className="pill status success">New</span>
+          <span className="pill warning">Paper first</span>
         </div>
         {error && (
           <div className="inline-alert danger" role="alert" aria-live="assertive">
@@ -130,7 +130,7 @@ function Register() {
             disabled={isLoading}
           />
           <button type="submit" className="primary" disabled={isLoading}>
-            {isLoading ? 'Creating account…' : 'Create account'}
+            {isLoading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
         <p className="tiny muted">API: {API_BASE_URL}</p>

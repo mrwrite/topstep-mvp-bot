@@ -138,6 +138,7 @@ def _serialize_order(
             account_id=order.account_id,
             idempotency_key=order.idempotency_key,
             source=order.source,
+            reference_price=order.response.get("reference_price") if order.response else None,
         ),
     )
     return {
@@ -148,6 +149,7 @@ def _serialize_order(
         "status": order.status,
         "order_id": order.provider_order_id,
         "message": "Paper order filled. No live broker order was placed.",
+        "reference_price": order.response.get("reference_price") if order.response else None,
         "order": {
             "id": order.id,
             "order_id": order.provider_order_id,
@@ -161,6 +163,7 @@ def _serialize_order(
             "account_id": order.account_id,
             "source": order.source,
             "idempotency_key": order.idempotency_key,
+            "reference_price": order.response.get("reference_price") if order.response else None,
             "created_at": _utc_iso(order.created_at),
             "updated_at": _utc_iso(order.updated_at),
         },
@@ -241,7 +244,7 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
         symbol=order.symbol,
         side=order.side,
         quantity=order.quantity,
-        price=None,
+        price=intent.reference_price,
     )
     db.add(fill)
 
@@ -272,6 +275,8 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
     db.flush()
 
     response = _serialize_order(db, order)
+    response["reference_price"] = intent.reference_price
+    response["order"]["reference_price"] = intent.reference_price
     order.response = response
     db.commit()
     db.refresh(order)
