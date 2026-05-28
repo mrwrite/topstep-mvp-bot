@@ -84,19 +84,19 @@
 
 ## Phase 5: Live-Readiness Acknowledgements and Launch Gates
 
-- [ ] 5.1 [P0] Add versioned live-readiness acknowledgement records scoped to user, account, integration, risk policy, and terms version.
+- [x] 5.1 [P0] Add versioned live-readiness acknowledgement records scoped to user, account, integration, risk policy, and terms version.
   - Why it blocks live readiness: live access requires explicit, current, scoped acceptance of risk and responsibility.
   - Acceptance criteria: live enablement fails without a current acknowledgement; changes to risk settings, terms, account, or integration invalidate acknowledgement.
   - Tests required: acknowledgement CRUD, invalidation, expiry, cross-user isolation, and live-blocking tests.
-- [ ] 5.2 [P0] Add launch gate API that reports pass/fail for all live-readiness criteria.
+- [x] 5.2 [P0] Add launch gate API that reports pass/fail for all live-readiness criteria.
   - Why it blocks live readiness: live enablement must be controlled by objective gates, not hidden assumptions.
   - Acceptance criteria: gate covers context, risk policy, kill switch, account/equity freshness, order lifecycle, duplicate protection, reconciliation, migrations, acknowledgements, provider health, and UI readiness flags.
   - Tests required: gate matrix tests for each failing prerequisite and all-pass paper/demo state.
-- [ ] 5.3 [P0] Keep live trading disabled unless launch gate explicitly passes and a separate allowlist/feature flag is enabled.
+- [x] 5.3 [P0] Keep live trading disabled unless launch gate explicitly passes and a separate allowlist/feature flag is enabled.
   - Why it blocks live readiness: implementation work must not accidentally enable live execution.
   - Acceptance criteria: live requests remain 403 until both gate and explicit live flag pass; default production and demo states block live.
   - Tests required: live-blocked default, missing flag, failing gate, expired acknowledgement, and allowlisted-gate-passing tests using fake adapter only.
-- [ ] 5.4 [P1] Add frontend live acknowledgement flow and persistent risk disclosure surfaces.
+- [x] 5.4 [P1] Add frontend live acknowledgement flow and persistent risk disclosure surfaces.
   - Why it blocks live readiness: users must see and accept the actual risks before any controlled live access.
   - Acceptance criteria: UI shows no-profit guarantee, user responsibility, account/risk policy scope, expiration, and current blocker list.
   - Tests required: component tests for acknowledgement blocked, acknowledgement accepted, expired acknowledgement, and keyboard navigation.

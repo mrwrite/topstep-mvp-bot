@@ -349,6 +349,49 @@ class AccountReconciliationLock(Base):
     )
 
 
+class LiveReadinessAcknowledgement(Base):
+    __tablename__ = "live_readiness_acknowledgements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    symbol = Column(String, nullable=True, index=True)
+    risk_settings_id = Column(Integer, ForeignKey("risk_settings.id", ondelete="SET NULL"), nullable=True)
+    acknowledgement_version = Column(String, nullable=False, default="live-readiness-v1")
+    terms_version = Column(String, nullable=False, default="terms-v1")
+    acknowledgement_type = Column(String, nullable=False, default="live_risk")
+    accepted = Column(Integer, nullable=False, default=1)
+    accepted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    invalidated_at = Column(DateTime, nullable=True)
+    acknowledgement_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_live_readiness_ack_scope", "user_id", "integration_id", "account_id", "symbol", "accepted"),
+    )
+
+
+class LaunchGateEvaluation(Base):
+    __tablename__ = "launch_gate_evaluations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    symbol = Column(String, nullable=True, index=True)
+    all_required_gates_passed = Column(Integer, nullable=False, default=0, index=True)
+    live_trading_available = Column(Integer, nullable=False, default=0, index=True)
+    live_feature_flag_enabled = Column(Integer, nullable=False, default=0)
+    gate_results = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_launch_gate_evaluations_user_created", "user_id", "created_at"),
+    )
+
+
 class StrategyConfig(Base):
     __tablename__ = "strategy_configs"
 
