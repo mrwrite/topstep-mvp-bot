@@ -18,7 +18,8 @@ from app.providers.factory import get_adapter
 from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability
 from app.strategy import check_trade_signal
-from app.trading_safety import build_order_intent, simulate_paper_order
+from app.paper_execution import execute_paper_order, get_paper_order, list_open_paper_orders, list_paper_positions
+from app.trading_safety import build_order_intent
 from logger import log_trade
 
 
@@ -177,9 +178,34 @@ async def execute_trade_endpoint(
         idempotency_key=order.idempotency_key,
         source="manual",
     )
-    response = simulate_paper_order(intent)
+    response = execute_paper_order(db, intent)
     log_trade(intent.symbol, intent.side, intent.quantity, 0, "PAPER", str(response))
     return response
+
+
+@router.get("/orders/{order_id}")
+def get_order_status(
+    order_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user_model),
+):
+    return get_paper_order(db, user_id=current_user.id, order_id=order_id)
+
+
+@router.get("/open-orders")
+def get_open_orders(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user_model),
+):
+    return list_open_paper_orders(db, user_id=current_user.id)
+
+
+@router.get("/positions")
+def get_positions(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user_model),
+):
+    return list_paper_positions(db, user_id=current_user.id)
 
 
 def fetch_price_data(adapter: TopStepXAdapter, symbol: str, interval_minutes=1, lookback_minutes=100):
@@ -338,6 +364,8 @@ def run_bot(
 
                 if signal in {"BUY", "SELL"}:
                     yield log(f"{signal} signal detected.")
+                    signal_time = indicators.index[-1].isoformat()
+                    idempotency_key = f"bot:{session_id}:{symbol}:{signal}:{signal_time}"
                     if auto_trade:
                         intent = build_order_intent(
                             user_id=session["user_id"],
@@ -346,9 +374,14 @@ def run_bot(
                             quantity=quantity,
                             trading_mode=session_state.get("trading_mode", "paper"),
                             integration_id=integration.id if integration else None,
+                            idempotency_key=idempotency_key,
                             source="bot",
                         )
-                        response = simulate_paper_order(intent)
+                        order_db = database.SessionLocal()
+                        try:
+                            response = execute_paper_order(order_db, intent)
+                        finally:
+                            order_db.close()
                         yield log(f"Paper trade response: {response}")
                         log_trade(
                             symbol,
@@ -365,6 +398,7 @@ def run_bot(
                             "price": df["close"].iloc[-1],
                             "symbol": symbol,
                             "quantity": quantity,
+                            "idempotency_key": idempotency_key,
                         }
                         yield log(json.dumps(prompt))
                 else:

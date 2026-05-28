@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text, Index, Float
 from datetime import datetime
 from .database import Base
 from pydantic import BaseModel
@@ -39,6 +39,74 @@ class PlatformIntegration(Base):
 
     __table_args__ = (
         Index("ix_platform_integrations_user_provider", "user_id", "provider"),
+    )
+
+
+class PaperOrder(Base):
+    __tablename__ = "paper_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    symbol = Column(String, nullable=False, index=True)
+    side = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    trading_mode = Column(String, nullable=False, default="paper")
+    order_type = Column(String, nullable=False, default="market")
+    source = Column(String, nullable=False)
+    idempotency_key = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="submitted", index=True)
+    provider_order_id = Column(String, nullable=True, index=True)
+    response = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ux_paper_orders_user_idempotency", "user_id", "idempotency_key", unique=True),
+        Index("ix_paper_orders_user_status", "user_id", "status"),
+    )
+
+
+class PaperOrderEvent(Base):
+    __tablename__ = "paper_order_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    message = Column(Text, nullable=True)
+    event_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PaperFill(Base):
+    __tablename__ = "paper_fills"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol = Column(String, nullable=False, index=True)
+    side = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    price = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PaperPosition(Base):
+    __tablename__ = "paper_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    symbol = Column(String, nullable=False, index=True)
+    quantity = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ux_paper_positions_scope", "user_id", "integration_id", "account_id", "symbol", unique=True),
     )
 
 

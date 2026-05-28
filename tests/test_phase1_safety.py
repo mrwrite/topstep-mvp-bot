@@ -12,7 +12,6 @@ os.environ.setdefault("CREDENTIALS_ENCRYPTION_KEY", Fernet.generate_key().decode
 from app import database  # noqa: E402
 from app.main import app  # noqa: E402
 from app.scheduler import BOT_SESSIONS, BOT_STATES  # noqa: E402
-from app.trading_routes import _WEBHOOK_IDEMPOTENCY_KEYS  # noqa: E402
 
 
 client = TestClient(app)
@@ -24,7 +23,6 @@ def reset_state():
     database.Base.metadata.create_all(bind=database.engine)
     BOT_SESSIONS.clear()
     BOT_STATES.clear()
-    _WEBHOOK_IDEMPOTENCY_KEYS.clear()
     yield
 
 
@@ -76,7 +74,13 @@ def test_manual_trade_is_paper_only_and_live_is_blocked():
 
     paper = client.post(
         "/scheduler/execute-trade",
-        json={"symbol": "ES", "side": "BUY", "quantity": 1, "trading_mode": "paper"},
+        json={
+            "symbol": "ES",
+            "side": "BUY",
+            "quantity": 1,
+            "trading_mode": "paper",
+            "idempotency_key": "paper-1",
+        },
         headers=auth_headers(token),
     )
     assert paper.status_code == 200
@@ -85,7 +89,13 @@ def test_manual_trade_is_paper_only_and_live_is_blocked():
 
     live = client.post(
         "/scheduler/execute-trade",
-        json={"symbol": "ES", "side": "BUY", "quantity": 1, "trading_mode": "live"},
+        json={
+            "symbol": "ES",
+            "side": "BUY",
+            "quantity": 1,
+            "trading_mode": "live",
+            "idempotency_key": "live-1",
+        },
         headers=auth_headers(token),
     )
     assert live.status_code == 403
@@ -107,6 +117,7 @@ def test_manual_trade_rejects_other_users_integration():
             "quantity": 1,
             "integration_id": alice_integration["id"],
             "trading_mode": "paper",
+            "idempotency_key": "foreign-integration-1",
         },
         headers=auth_headers(bob_token),
     )
@@ -204,3 +215,4 @@ def test_webhook_requires_secret_and_idempotency_key():
     )
     assert duplicate.status_code == 200
     assert duplicate.json()["status"] == "duplicate"
+    assert duplicate.json()["result"]["duplicate"] is True

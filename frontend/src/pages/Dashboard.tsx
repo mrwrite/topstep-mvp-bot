@@ -30,6 +30,7 @@ type TradePrompt = {
   price: number;
   symbol: string;
   quantity: number;
+  idempotency_key: string;
 };
 
 type MarketStructureSnapshot = {

@@ -32,16 +32,16 @@
 
 ## 3. Phase 3: Trading Execution Reliability
 
-- [ ] 3.1 Add normalized `OrderIntent`, `OrderRecord`, `OrderEvent`, `Fill`, and `Position` database models and Alembic migrations.
-- [ ] 3.2 Add an `OrderExecutionService` that creates pending orders, runs risk checks, submits to paper or broker adapter, and records every state transition.
-- [ ] 3.3 Add client/server idempotency keys to manual orders, webhooks, and bot-generated strategy orders.
+- [x] 3.1 Add normalized `OrderIntent`, `OrderRecord`, `OrderEvent`, `Fill`, and `Position` database models and Alembic migrations.
+- [x] 3.2 Add an `OrderExecutionService` that creates pending orders, runs risk checks, submits to paper or broker adapter, and records every state transition.
+- [x] 3.3 Add client/server idempotency keys to manual orders, webhooks, and bot-generated strategy orders.
 - [ ] 3.4 Add support for market, limit, stop, and stop-limit schemas with provider capability checks.
 - [ ] 3.5 Add provider order status tracking and normalized states: pending, accepted, rejected, partially filled, filled, canceled, expired, failed, and unknown.
-- [ ] 3.6 Add fill confirmation workflow before showing an order as filled.
+- [x] 3.6 Add fill confirmation workflow before showing an order as filled.
 - [ ] 3.7 Add safe retry policy that reconciles unknown provider state before any resubmission.
 - [ ] 3.8 Add position reconciliation against provider state for live accounts.
-- [ ] 3.9 Add duplicate-order prevention windows for repeated bot signals, webhook retries, and UI double submissions.
-- [ ] 3.10 Replace CSV trade logging as the source of truth with database audit/order records while keeping optional local logs for development only.
+- [x] 3.9 Add duplicate-order prevention windows for repeated bot signals, webhook retries, and UI double submissions.
+- [x] 3.10 Replace CSV trade logging as the source of truth with database audit/order records while keeping optional local logs for development only.
 - [ ] 3.11 Add execution tests for accepted, rejected, timeout, unknown, duplicate, partial fill, and provider-unavailable cases.
 
 ## 4. Phase 4: Strategy and Paper-Trading Validation

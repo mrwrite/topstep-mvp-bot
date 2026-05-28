@@ -6,13 +6,12 @@ from sqlalchemy.orm import Session
 from app import database, models
 from app.auth_routes import get_current_user_model
 from app.integrations_service import resolve_integration
+from app.paper_execution import execute_paper_order
 from app.providers.factory import get_adapter
 from app.providers.types import IntegrationCapability, IntegrationProvider, PROVIDER_CAPABILITIES
-from app.trading_safety import build_order_intent, simulate_paper_order
+from app.trading_safety import build_order_intent
 
 router = APIRouter()
-
-_WEBHOOK_IDEMPOTENCY_KEYS: set[str] = set()
 
 class TradingSignal(BaseModel):
     symbol: str
@@ -45,9 +44,10 @@ async def test_trade(
         quantity=1,
         trading_mode=trading_mode,
         integration_id=integration.id,
+        idempotency_key=f"test-trade:{current_user.id}",
         source="test-trade",
     )
-    return simulate_paper_order(intent)
+    return execute_paper_order(db, intent)
 
 @router.post("/webhook")
 async def receive_signal(
@@ -64,8 +64,6 @@ async def receive_signal(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="idempotency_key is required for webhook replay protection.",
         )
-    if signal.idempotency_key in _WEBHOOK_IDEMPOTENCY_KEYS:
-        return {"status": "duplicate", "message": "Webhook signal already processed."}
 
     signal_integration = (
         db.query(models.PlatformIntegration)
@@ -114,6 +112,5 @@ async def receive_signal(
         idempotency_key=signal.idempotency_key,
         source="webhook",
     )
-    _WEBHOOK_IDEMPOTENCY_KEYS.add(signal.idempotency_key)
-    result = simulate_paper_order(intent)
-    return {"status": "received", "result": result}
+    result = execute_paper_order(db, intent)
+    return {"status": "duplicate" if result["duplicate"] else "received", "result": result}
