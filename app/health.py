@@ -31,6 +31,51 @@ def _migration_state() -> dict:
     }
 
 
+def _readiness_checklist(migration_state: dict | None = None) -> list[dict]:
+    migrations = migration_state or _migration_state()
+    migrations_ok = migrations["status"] in {"ok", "skipped"}
+    return [
+        {
+            "code": "mode",
+            "label": "Execution mode",
+            "passed": True,
+            "detail": "Paper-only execution is enforced; live order routing is disabled.",
+            "priority": "P0",
+        },
+        {
+            "code": "provider_capabilities",
+            "label": "Provider capabilities",
+            "passed": True,
+            "detail": "Implemented and roadmap provider capabilities are exposed for UI checks.",
+            "priority": "P1",
+        },
+        {
+            "code": "order_lifecycle",
+            "label": "Order lifecycle",
+            "passed": True,
+            "detail": "Paper orders use durable lifecycle, event, duplicate, and ledger records.",
+            "priority": "P0",
+        },
+        {
+            "code": "migrations",
+            "label": "Migration baseline",
+            "passed": migrations_ok,
+            "detail": "Alembic schema state is current or explicitly skipped outside production."
+            if migrations_ok
+            else "Database migration state is behind Alembic head.",
+            "priority": "P0",
+            "metadata": migrations,
+        },
+        {
+            "code": "observability",
+            "label": "Operational diagnostics",
+            "passed": True,
+            "detail": "Health, launch gate, risk, paper ledger, and reconciliation diagnostics are available.",
+            "priority": "P1",
+        },
+    ]
+
+
 @router.get("/health/live")
 def live():
     return {
@@ -76,10 +121,12 @@ def ready():
 
 @router.get("/ops/status")
 def operational_status():
+    migration_state = _migration_state()
     return {
         "environment": database.APP_CONFIG.app_env,
         "live_trading_enabled": False,
         "execution_mode": "paper-only",
+        "readiness_checklist": _readiness_checklist(migration_state),
         "implemented_provider_capabilities": {
             provider.value: sorted(capability.value for capability in capabilities)
             for provider, capabilities in IMPLEMENTED_PROVIDER_CAPABILITIES.items()

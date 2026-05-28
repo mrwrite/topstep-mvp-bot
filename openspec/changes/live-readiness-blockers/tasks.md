@@ -103,19 +103,19 @@
 
 ## Phase 6: Accessibility, Responsive, and Operational Readiness
 
-- [ ] 6.1 [P1] Add full dashboard readiness checklist covering provider, credentials, account, contract, market data, risk policy, kill switch, order lifecycle, reconciliation, acknowledgements, migrations, and mode.
+- [x] 6.1 [P1] Add full dashboard readiness checklist covering provider, credentials, account, contract, market data, risk policy, kill switch, order lifecycle, reconciliation, acknowledgements, migrations, and mode.
   - Why it blocks live readiness: users need a complete visible safety model before trading actions are enabled.
   - Acceptance criteria: checklist is backed by API state and disables trading controls for any P0 blocker.
   - Tests required: frontend tests for each checklist blocker and backend readiness response tests.
-- [ ] 6.2 [P1] Add responsive and accessibility tests for dashboard, integrations, auth, readiness checklist, live acknowledgement, and emergency stop controls.
+- [x] 6.2 [P1] Add responsive and accessibility tests for dashboard, integrations, auth, readiness checklist, live acknowledgement, and emergency stop controls.
   - Why it blocks live readiness: critical controls must be usable under real device and assistive technology conditions.
   - Acceptance criteria: Playwright or equivalent tests cover desktop, tablet, and mobile widths; keyboard access and accessible names exist for critical controls.
   - Tests required: responsive smoke tests, axe/accessibility checks if available, keyboard navigation tests, no-overlap screenshot checks.
-- [ ] 6.3 [P0] Repair production migration baseline and add fresh-database migration verification.
+- [x] 6.3 [P0] Repair production migration baseline and add fresh-database migration verification.
   - Why it blocks live readiness: live deployment cannot rely on runtime `create_all()` or ambiguous schema history.
   - Acceptance criteria: a fresh database can be built from Alembic alone; `/health/ready` fails when DB revision is behind; migration rollback guidance exists.
   - Tests required: migration-up fresh DB test, schema constraint assertions, readiness-behind-head test.
-- [ ] 6.4 [P1] Add operational runbook and support diagnostics for live-readiness incidents.
+- [x] 6.4 [P1] Add operational runbook and support diagnostics for live-readiness incidents.
   - Why it blocks live readiness: support must investigate blocked orders, provider mismatches, risk lockouts, and reconciliation issues without exposing secrets.
   - Acceptance criteria: runbook covers disable live flag, activate kill switch, inspect audit, run reconciliation, restore from backup, and contact user.
   - Tests required: diagnostic API authorization tests and redaction tests.

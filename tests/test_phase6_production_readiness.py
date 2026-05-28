@@ -1,8 +1,11 @@
 import os
 
+from alembic import command
+from alembic.config import Config
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 import pytest
+from sqlalchemy import create_engine, inspect, text
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
@@ -33,6 +36,10 @@ def test_health_and_operational_status_are_paper_only():
     assert status.status_code == 200
     assert status.json()["live_trading_enabled"] is False
     assert status.json()["execution_mode"] == "paper-only"
+    checklist = {item["code"]: item for item in status.json()["readiness_checklist"]}
+    assert checklist["mode"]["passed"] is True
+    assert checklist["order_lifecycle"]["passed"] is True
+    assert "migrations" in checklist
 
 
 def test_security_headers_and_request_id_are_present():
@@ -104,3 +111,56 @@ def test_redaction_removes_secret_values():
     assert redacted["apiKey"] == "[REDACTED]"
     assert redacted["nested"]["refreshToken"] == "[REDACTED]"
     assert redacted["nested"]["symbol"] == "ES"
+
+
+def test_fresh_database_can_upgrade_to_alembic_head(tmp_path):
+    db_path = tmp_path / "fresh-live-readiness.db"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    expected_tables = {
+        "users",
+        "platform_integrations",
+        "paper_orders",
+        "paper_order_events",
+        "risk_settings",
+        "kill_switches",
+        "paper_account_snapshots",
+        "paper_ledger_entries",
+        "provider_reconciliation_runs",
+        "account_reconciliation_locks",
+        "live_readiness_acknowledgements",
+        "launch_gate_evaluations",
+    }
+    assert expected_tables.issubset(tables)
+    paper_order_indexes = {index["name"] for index in inspector.get_indexes("paper_orders")}
+    assert "ux_paper_orders_user_idempotency" in paper_order_indexes
+
+
+def test_production_readiness_fails_when_database_revision_is_behind(monkeypatch, tmp_path):
+    from app import database
+
+    db_path = tmp_path / "behind-head.db"
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('dcfa013ab9b1')"))
+        connection.execute(text("SELECT 1"))
+
+    original_env = database.APP_CONFIG.app_env
+    object.__setattr__(database.APP_CONFIG, "app_env", "production")
+    monkeypatch.setattr(database, "engine", engine)
+    try:
+        response = client.get("/health/ready")
+    finally:
+        object.__setattr__(database.APP_CONFIG, "app_env", original_env)
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["checks"]["migrations"]["status"] == "error"

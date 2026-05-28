@@ -287,6 +287,11 @@ button.ghost {
   color: var(--text-main);
 }
 
+button.ghost.danger {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: var(--negative);
+}
+
 button.ghost.compact {
   padding: 0.45rem 0.75rem;
   font-size: 0.9rem;
@@ -371,6 +376,14 @@ button:disabled {
   display: grid;
   gap: 0.6rem;
   margin-bottom: 1rem;
+}
+
+.readiness-summary {
+  padding: 0.85rem;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  margin-bottom: 0.75rem;
 }
 
 .readiness-item,
@@ -797,5 +810,11 @@ button:disabled {
   .grid,
   .stat-row {
     grid-template-columns: 1fr;
+  }
+
+  .button-row,
+  .input-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

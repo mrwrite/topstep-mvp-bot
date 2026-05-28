@@ -278,8 +278,8 @@ function Integrations() {
               New
             </button>
           </div>
-          {error && <div className="inline-alert danger">{error}</div>}
-          {activationNotice && <div className="inline-alert">{activationNotice}</div>}
+          {error && <div className="inline-alert danger" role="alert">{error}</div>}
+          {activationNotice && <div className="inline-alert" role="status">{activationNotice}</div>}
 
           <form className="integration-form" onSubmit={handleSubmit}>
             <label htmlFor="display_name">Display name</label>
@@ -459,14 +459,14 @@ function Integrations() {
                       {activeId === integration.id ? (
                         <span className="pill subtle">Active</span>
                       ) : (
-                        <button type="button" className="ghost compact" onClick={() => activateIntegration(integration.id)}>
-                          Set active
-                        </button>
-                      )}
-                      <button type="button" className="ghost compact" onClick={() => startEdit(integration)}>
+                      <button type="button" className="ghost compact" onClick={() => activateIntegration(integration.id)} aria-label={`Set ${integration.display_name} as active integration`}>
+                        Set active
+                      </button>
+                    )}
+                      <button type="button" className="ghost compact" onClick={() => startEdit(integration)} aria-label={`Edit ${integration.display_name}`}>
                         Edit
                       </button>
-                      <button type="button" className="ghost compact danger" onClick={() => handleDelete(integration.id)}>
+                      <button type="button" className="ghost compact danger" onClick={() => handleDelete(integration.id)} aria-label={`Delete ${integration.display_name}`}>
                         Delete
                       </button>
                     </div>

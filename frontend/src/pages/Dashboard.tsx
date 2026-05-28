@@ -23,6 +23,7 @@ type Integration = {
   provider: string;
   status: string;
   metadata?: Record<string, unknown>;
+  has_credentials?: boolean;
 };
 
 type Account = {
@@ -95,6 +96,64 @@ type DemoStatus = {
   remaining_blockers: string[];
 };
 
+type RiskSettings = {
+  id: number;
+  enabled: boolean;
+  max_quantity: number;
+  max_contracts: number;
+  max_daily_loss: number;
+  max_open_positions: number;
+  live_trading_enabled: boolean;
+};
+
+type KillSwitch = {
+  id: number;
+  active: boolean;
+  reason?: string;
+  account_id?: string | null;
+};
+
+type PaperAccount = {
+  id: number;
+  integration_id?: number | null;
+  account_id?: string | null;
+  cash_balance: number;
+  equity: number;
+  buying_power: number;
+  realized_pnl: number;
+};
+
+type LaunchGate = {
+  all_required_gates_passed: boolean;
+  live_trading_available: boolean;
+  live_trading_blocked_reason?: string | null;
+  gates: Array<{
+    code: string;
+    passed: boolean;
+    detail: string;
+    metadata?: Record<string, unknown>;
+  }>;
+};
+
+type OperationalStatus = {
+  live_trading_enabled: boolean;
+  execution_mode: string;
+  readiness_checklist: Array<{
+    code: string;
+    label: string;
+    passed: boolean;
+    detail: string;
+    priority: string;
+  }>;
+};
+
+type ReadinessItem = {
+  label: string;
+  ready: boolean;
+  detail: string;
+  blocksPaper: boolean;
+};
+
 type TradePrompt = {
   side: string;
   price: number;
@@ -162,6 +221,12 @@ function Dashboard() {
   const [strategySignals, setStrategySignals] = useState<StrategySignal[]>([]);
   const [strategyMetrics, setStrategyMetrics] = useState<StrategyMetrics | null>(null);
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
+  const [riskSettings, setRiskSettings] = useState<RiskSettings | null>(null);
+  const [killSwitches, setKillSwitches] = useState<KillSwitch[]>([]);
+  const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([]);
+  const [launchGate, setLaunchGate] = useState<LaunchGate | null>(null);
+  const [opsStatus, setOpsStatus] = useState<OperationalStatus | null>(null);
+  const [readinessError, setReadinessError] = useState('');
   const [demoBusy, setDemoBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [countdown, setCountdown] = useState<number>(0);
@@ -233,6 +298,33 @@ function Dashboard() {
     }
   };
 
+  const refreshReadinessState = async () => {
+    setReadinessError('');
+    const scope =
+      activeIntegration?.id && selectedAccountId && selectedSymbol
+        ? { integration_id: activeIntegration.id, account_id: selectedAccountId, symbol: selectedSymbol }
+        : {};
+
+    const [riskRes, killRes, accountRes, launchRes, opsRes] = await Promise.allSettled([
+      api.get('/risk/settings', { params: { ...scope, trading_mode: 'paper' } }),
+      api.get('/risk/kill-switches', { params: { active_only: true } }),
+      api.get('/scheduler/paper-accounts'),
+      api.get('/launch-gate', { params: scope }),
+      api.get('/ops/status')
+    ]);
+
+    if (riskRes.status === 'fulfilled') setRiskSettings(riskRes.value.data);
+    if (killRes.status === 'fulfilled') setKillSwitches(killRes.value.data ?? []);
+    if (accountRes.status === 'fulfilled') setPaperAccounts(accountRes.value.data ?? []);
+    if (launchRes.status === 'fulfilled') setLaunchGate(launchRes.value.data);
+    if (opsRes.status === 'fulfilled') setOpsStatus(opsRes.value.data);
+
+    const failed = [riskRes, killRes, accountRes, launchRes, opsRes].some(result => result.status === 'rejected');
+    if (failed) {
+      setReadinessError('Some readiness diagnostics are unavailable. Trading remains paper-only.');
+    }
+  };
+
   useEffect(() => {
     api
       .get('/auth/me')
@@ -272,6 +364,13 @@ function Dashboard() {
     refreshDemoStatus();
   }, [navigate]);
 
+  useEffect(() => {
+    refreshReadinessState().catch(err => {
+      console.error('Failed to load readiness diagnostics', err);
+      setReadinessError('Readiness diagnostics are unavailable. Trading remains paper-only.');
+    });
+  }, [activeIntegration?.id, selectedAccountId, selectedSymbol]);
+
   const seedDemoPackage = async () => {
     setDemoBusy(true);
     try {
@@ -279,6 +378,7 @@ function Dashboard() {
       setDemoStatus(res.data);
       setStatusMessage('Demo package loaded. Live trading remains disabled.');
       await refreshTradingState();
+      await refreshReadinessState();
       api.get('/integrations').then(integrationRes => setIntegrations(integrationRes.data ?? []));
     } catch (err) {
       setStatusMessage(apiMessage(err, 'Unable to load demo package.'));
@@ -294,6 +394,7 @@ function Dashboard() {
       setDemoStatus(res.data);
       setStatusMessage('Demo package reset.');
       await refreshTradingState();
+      await refreshReadinessState();
       api.get('/integrations').then(integrationRes => setIntegrations(integrationRes.data ?? []));
     } catch (err) {
       setStatusMessage(apiMessage(err, 'Unable to reset demo package.'));
@@ -382,16 +483,36 @@ function Dashboard() {
   const isFallbackContracts =
     !contractsError && !loadingContracts && (contractsSource === 'fallback' || contracts.length === 0);
 
-  const readinessItems = [
+  const selectedIntegrationRecord = integrations.find(integration => integration.id === activeIntegration?.id);
+  const gateByCode = new Map((launchGate?.gates ?? []).map(gate => [gate.code, gate]));
+  const opsByCode = new Map((opsStatus?.readiness_checklist ?? []).map(item => [item.code, item]));
+  const activeKillSwitch = killSwitches.find(item => item.active);
+  const scopedPaperAccount = paperAccounts.find(
+    account =>
+      (!activeIntegration?.id || account.integration_id === activeIntegration.id) &&
+      (!selectedAccountId || account.account_id === selectedAccountId)
+  );
+
+  const readinessItems: ReadinessItem[] = [
     {
       label: 'Broker integration',
       ready: Boolean(activeIntegration),
-      detail: activeIntegration ? `${activeIntegration.display_name} (${activeIntegration.provider})` : 'Select an integration.'
+      detail: activeIntegration ? `${activeIntegration.display_name} (${activeIntegration.provider})` : 'Select an integration.',
+      blocksPaper: true
+    },
+    {
+      label: 'Credentials',
+      ready: Boolean(selectedIntegrationRecord?.has_credentials),
+      detail: selectedIntegrationRecord?.has_credentials
+        ? 'Credentials are stored for the selected integration.'
+        : 'Credentials are missing or integration metadata is unavailable.',
+      blocksPaper: false
     },
     {
       label: 'Account',
       ready: Boolean(selectedAccountId),
-      detail: selectedAccountId || 'Select an account.'
+      detail: selectedAccountId || 'Select an account.',
+      blocksPaper: true
     },
     {
       label: 'Contract',
@@ -400,26 +521,77 @@ function Dashboard() {
         ? contractsError
         : isFallbackContracts
           ? 'Fallback symbols are paper-only and not provider validated.'
-          : selectedSymbol
+          : selectedSymbol,
+      blocksPaper: true
+    },
+    {
+      label: 'Market data',
+      ready: !contractsError && !isFallbackContracts && providerHealth !== 'Unavailable',
+      detail: contractsError || (isFallbackContracts ? 'Provider contract data is not validated.' : 'Provider contract lookup is available.'),
+      blocksPaper: true
     },
     {
       label: 'Mode',
       ready: true,
-      detail: 'Paper only. Live trading is disabled.'
+      detail: 'Paper only. Live trading is disabled.',
+      blocksPaper: false
     },
     {
       label: 'Provider status',
       ready: providerHealth.toLowerCase() === 'ok' || providerHealth === 'Unchecked',
-      detail: providerHealth
+      detail: providerHealth,
+      blocksPaper: true
     },
     {
-      label: 'Risk status',
-      ready: true,
-      detail: 'Defensive Phase 1 guards active; max quantity remains limited.'
+      label: 'Risk policy',
+      ready: Boolean(riskSettings?.enabled),
+      detail: riskSettings
+        ? `Max qty ${riskSettings.max_quantity}, max contracts ${riskSettings.max_contracts}, live enabled: ${riskSettings.live_trading_enabled ? 'yes' : 'no'}`
+        : gateByCode.get('risk_settings_exist')?.detail ?? 'Risk settings have not loaded.',
+      blocksPaper: true
+    },
+    {
+      label: 'Kill switch',
+      ready: !activeKillSwitch && gateByCode.get('kill_switch_clear')?.passed !== false,
+      detail: activeKillSwitch?.reason ?? gateByCode.get('kill_switch_clear')?.detail ?? 'No active kill switch reported.',
+      blocksPaper: true
+    },
+    {
+      label: 'Paper ledger',
+      ready: Boolean(scopedPaperAccount) || gateByCode.get('paper_ledger_exists')?.passed === true,
+      detail: scopedPaperAccount
+        ? `Equity ${scopedPaperAccount.equity.toFixed(2)}, buying power ${scopedPaperAccount.buying_power.toFixed(2)}`
+        : gateByCode.get('paper_ledger_exists')?.detail ?? 'No scoped paper ledger snapshot yet.',
+      blocksPaper: false
+    },
+    {
+      label: 'Order lifecycle',
+      ready: opsByCode.get('order_lifecycle')?.passed !== false,
+      detail: opsByCode.get('order_lifecycle')?.detail ?? 'Paper order lifecycle endpoints are available.',
+      blocksPaper: false
+    },
+    {
+      label: 'Reconciliation',
+      ready: gateByCode.get('broker_reconciliation_clear')?.passed !== false,
+      detail: gateByCode.get('broker_reconciliation_clear')?.detail ?? 'No reconciliation lock reported.',
+      blocksPaper: true
+    },
+    {
+      label: 'Acknowledgement',
+      ready: gateByCode.get('legal_risk_acknowledgement_current')?.passed === true,
+      detail: gateByCode.get('legal_risk_acknowledgement_current')?.detail ?? 'Current scoped acknowledgement is missing.',
+      blocksPaper: false
+    },
+    {
+      label: 'Migrations',
+      ready: opsByCode.get('migrations')?.passed !== false && gateByCode.get('production_config_valid')?.passed !== false,
+      detail: opsByCode.get('migrations')?.detail ?? gateByCode.get('production_config_valid')?.detail ?? 'Migration status unavailable outside production.',
+      blocksPaper: false
     }
   ];
 
-  const blockers = readinessItems.filter(item => !item.ready);
+  const blockers = readinessItems.filter(item => !item.ready && item.blocksPaper);
+  const liveBlockers = readinessItems.filter(item => !item.ready);
   const canStartPaperSession = blockers.length === 0 && !loadingAccounts && !loadingContracts;
 
   const startStream = async () => {
@@ -518,6 +690,21 @@ function Dashboard() {
     setStatusMessage('Paper session stopped.');
   };
 
+  const activateEmergencyStop = async () => {
+    stopStream();
+    try {
+      await api.post('/risk/kill-switches', {
+        integration_id: activeIntegration?.id,
+        account_id: selectedAccountId || undefined,
+        reason: 'Emergency stop activated from dashboard.'
+      });
+      setStatusMessage('Emergency stop is active. New paper orders are blocked for this scope.');
+      await refreshReadinessState();
+    } catch (err) {
+      setStatusMessage(apiMessage(err, 'Unable to activate emergency stop.'));
+    }
+  };
+
   const logout = () => {
     stopStream();
     localStorage.removeItem('token');
@@ -534,9 +721,10 @@ function Dashboard() {
         trading_mode: 'paper'
       })
       .then(res => {
-        setLatestOrder(res.data);
-        setLogs(prev => [...prev, 'Paper trade filled. No live order was placed.']);
-        refreshTradingState();
+      setLatestOrder(res.data);
+      setLogs(prev => [...prev, 'Paper trade filled. No live order was placed.']);
+      refreshTradingState();
+      refreshReadinessState();
       })
       .catch(err => {
         console.error('Manual trade failed', err);
@@ -667,7 +855,8 @@ function Dashboard() {
               Add a broker integration before starting a paper session.
             </div>
           )}
-          {statusMessage && <div className="inline-alert">{statusMessage}</div>}
+          {statusMessage && <div className="inline-alert" role="status" aria-live="polite">{statusMessage}</div>}
+          {readinessError && <div className="inline-alert warning" role="alert">{readinessError}</div>}
 
           <div className="demo-panel">
             <div>
@@ -705,10 +894,20 @@ function Dashboard() {
             </div>
           )}
 
-          <div className="readiness-list">
+          <div className="readiness-summary" role="status" aria-live="polite">
+            <strong>{launchGate?.live_trading_available ? 'Live gate passed' : 'Live gate blocked'}</strong>
+            <p className="tiny muted">
+              {launchGate?.live_trading_blocked_reason ??
+                `${liveBlockers.length} readiness item${liveBlockers.length === 1 ? '' : 's'} need attention. Live trading remains disabled.`}
+            </p>
+          </div>
+
+          <div className="readiness-list" aria-label="Live-readiness checklist">
             {readinessItems.map(item => (
               <div className="readiness-item" key={item.label}>
-                <span className={item.ready ? 'check good' : 'check blocked'}>{item.ready ? 'OK' : 'Fix'}</span>
+                <span className={item.ready ? 'check good' : 'check blocked'} aria-label={`${item.label}: ${item.ready ? 'ready' : 'blocked'}`}>
+                  {item.ready ? 'OK' : 'Fix'}
+                </span>
                 <div>
                   <strong>{item.label}</strong>
                   <p className="tiny muted">{item.detail}</p>
@@ -717,10 +916,26 @@ function Dashboard() {
             ))}
           </div>
 
+          <div className="button-row">
+            <button
+              type="button"
+              className="ghost danger"
+              onClick={activateEmergencyStop}
+              disabled={Boolean(activeKillSwitch)}
+              aria-label="Activate emergency stop kill switch"
+            >
+              Emergency stop
+            </button>
+            <button type="button" className="ghost" onClick={refreshReadinessState}>
+              Refresh readiness
+            </button>
+          </div>
+
           <div className="control-group">
-            <label>Active integration</label>
+            <label htmlFor="active-integration">Active integration</label>
             <div className="input-row">
               <select
+                id="active-integration"
                 value={activeIntegration?.id ?? ''}
                 onChange={e => {
                   const nextId = Number(e.target.value);
@@ -743,8 +958,9 @@ function Dashboard() {
           </div>
 
           <div className="control-group">
-            <label>Account</label>
+            <label htmlFor="account-select">Account</label>
             <select
+              id="account-select"
               value={selectedAccountId}
               onChange={e => setSelectedAccountId(e.target.value)}
               disabled={!activeIntegration || loadingAccounts || accounts.length === 0}
@@ -760,9 +976,10 @@ function Dashboard() {
           </div>
 
           <div className="control-group">
-            <label>Contract</label>
+            <label htmlFor="contract-select">Contract</label>
             <div className="input-row">
               <select
+                id="contract-select"
                 value={selectedSymbol}
                 onChange={e => setSelectedSymbol(e.target.value)}
                 disabled={loadingContracts || contractOptions.length === 0}
@@ -859,6 +1076,21 @@ function Dashboard() {
               <p className="tiny muted">Paper orders</p>
               <strong>{strategyMetrics?.orders ?? 0}</strong>
               <p className="tiny muted">{openOrders.length} open</p>
+            </div>
+            <div className="card compact">
+              <p className="tiny muted">Risk policy</p>
+              <strong>{riskSettings?.enabled ? 'Active' : 'Missing'}</strong>
+              <p className="tiny muted">Max qty {riskSettings?.max_quantity ?? '-'}</p>
+            </div>
+            <div className="card compact">
+              <p className="tiny muted">Kill switch</p>
+              <strong>{activeKillSwitch ? 'Active' : 'Clear'}</strong>
+              <p className="tiny muted">{activeKillSwitch?.reason ?? 'No active stop state'}</p>
+            </div>
+            <div className="card compact">
+              <p className="tiny muted">Paper equity</p>
+              <strong>{scopedPaperAccount ? scopedPaperAccount.equity.toFixed(2) : '-'}</strong>
+              <p className="tiny muted">Buying power {scopedPaperAccount ? scopedPaperAccount.buying_power.toFixed(2) : '-'}</p>
             </div>
             <div className="card compact">
               <p className="tiny muted">Strategy signals</p>

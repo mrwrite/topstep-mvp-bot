@@ -41,6 +41,7 @@ TRADINGVIEW_BASE_URL=https://api.tradingview.com  # optional
 > Run Alembic migrations before marking a hosted backend ready.
 
 Production deployment notes are in [docs/deployment-readiness.md](docs/deployment-readiness.md).
+Live-readiness incident procedures are in [docs/live-readiness-operational-runbook.md](docs/live-readiness-operational-runbook.md), and responsive/accessibility checks are in [docs/accessibility-responsive-checks.md](docs/accessibility-responsive-checks.md).
 
 ## Investor demo
 
