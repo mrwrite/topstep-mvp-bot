@@ -139,6 +139,9 @@ def set_active_integration(
 
 
 def env_fallback_enabled() -> bool:
+    environment = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()
+    if environment not in {"development", "test", "demo"}:
+        return False
     return os.getenv("ALLOW_ENV_BROKER_FALLBACK", "false").lower() == "true"
 
 

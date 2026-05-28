@@ -1,21 +1,18 @@
 # app/trading_routes.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from datetime import datetime
-import os, csv
 from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
-from app.integrations_service import env_fallback_enabled, env_topstepx_credentials, resolve_integration
+from app.integrations_service import resolve_integration
 from app.providers.factory import get_adapter
-from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability, IntegrationProvider, PROVIDER_CAPABILITIES
+from app.trading_safety import build_order_intent, simulate_paper_order
 
 router = APIRouter()
 
-LOG_PATH = os.path.join("logs", "trades.csv")
-os.makedirs("logs", exist_ok=True)
+_WEBHOOK_IDEMPOTENCY_KEYS: set[str] = set()
 
 class TradingSignal(BaseModel):
     symbol: str
@@ -24,9 +21,13 @@ class TradingSignal(BaseModel):
     signal_integration_id: int | None = None
     broker_integration_id: int | None = None
     secret: str | None = None
+    trading_mode: str = "paper"
+    order_type: str = "market"
+    idempotency_key: str | None = None
 
 @router.get("/test-trade")
 async def test_trade(
+    trading_mode: str = "paper",
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user_model),
 ):
@@ -37,22 +38,34 @@ async def test_trade(
     )
     if not integration:
         raise HTTPException(status_code=400, detail="No active broker integration configured.")
-    adapter = get_adapter(integration)
-    return await adapter.place_order({"symbol": "NQU5", "side": "BUY", "quantity": 1})
+    intent = build_order_intent(
+        user_id=current_user.id,
+        symbol="NQU5",
+        side="BUY",
+        quantity=1,
+        trading_mode=trading_mode,
+        integration_id=integration.id,
+        source="test-trade",
+    )
+    return simulate_paper_order(intent)
 
 @router.post("/webhook")
 async def receive_signal(
     signal: TradingSignal,
     db: Session = Depends(database.get_db),
 ):
-    with open(LOG_PATH, "a", newline="") as f:
-        csv.writer(f).writerow([datetime.now(), signal.symbol, signal.side, signal.quantity])
-
     if not signal.signal_integration_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="signal_integration_id is required for webhook routing.",
         )
+    if not signal.idempotency_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="idempotency_key is required for webhook replay protection.",
+        )
+    if signal.idempotency_key in _WEBHOOK_IDEMPOTENCY_KEYS:
+        return {"status": "duplicate", "message": "Webhook signal already processed."}
 
     signal_integration = (
         db.query(models.PlatformIntegration)
@@ -76,27 +89,31 @@ async def receive_signal(
         if not signal_adapter.validate_webhook_secret(signal.secret):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret.")
 
-    broker_integration = resolve_integration(
-        db,
-        signal_integration.user_id,
-        integration_id=signal.broker_integration_id,
-        required_capabilities={IntegrationCapability.BROKER_TRADING},
-    )
-    adapter = None
-    if broker_integration:
-        adapter = get_adapter(broker_integration)
-    elif env_fallback_enabled():
-        env_credentials = env_topstepx_credentials()
-        if env_credentials:
-            adapter = TopStepXAdapter(env_credentials, {})
-
-    if not adapter:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active broker integration configured for execution.",
+    broker_integration = None
+    if signal.broker_integration_id is not None:
+        broker_integration = resolve_integration(
+            db,
+            signal_integration.user_id,
+            integration_id=signal.broker_integration_id,
+            required_capabilities={IntegrationCapability.BROKER_TRADING},
         )
+        if not broker_integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Broker integration not found for signal owner.",
+            )
 
-    result = await adapter.place_order(
-        {"symbol": signal.symbol, "side": signal.side, "quantity": signal.quantity}
+    intent = build_order_intent(
+        user_id=signal_integration.user_id,
+        symbol=signal.symbol,
+        side=signal.side,
+        quantity=signal.quantity,
+        trading_mode=signal.trading_mode,
+        order_type=signal.order_type,
+        integration_id=broker_integration.id if broker_integration else None,
+        idempotency_key=signal.idempotency_key,
+        source="webhook",
     )
+    _WEBHOOK_IDEMPOTENCY_KEYS.add(signal.idempotency_key)
+    result = simulate_paper_order(intent)
     return {"status": "received", "result": result}

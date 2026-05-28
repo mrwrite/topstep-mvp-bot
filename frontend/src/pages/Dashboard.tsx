@@ -265,7 +265,7 @@ function Dashboard() {
     logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
   }, [logs, pendingTrade]);
 
-  const startStream = () => {
+  const startStream = async () => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -278,11 +278,40 @@ function Dashboard() {
       return;
     }
 
-    const url = `${API_BASE_URL}/scheduler/run-bot?symbol=${encodeURIComponent(
-      selectedSymbol
-    )}&buy_threshold=${buyThreshold ?? 30}&sell_threshold=${sellThreshold ?? 70}&auto_trade=${autoTrade}&quantity=${quantity}&interval_seconds=${intervalSeconds}&access_token=${encodeURIComponent(
-      token
-    )}`;
+    let sessionId = '';
+    try {
+      const sessionRes = await api.post('/scheduler/bot-sessions', {
+        symbol: selectedSymbol,
+        buy_threshold: buyThreshold ?? 30,
+        sell_threshold: sellThreshold ?? 70,
+        auto_trade: autoTrade,
+        quantity,
+        interval_seconds: intervalSeconds,
+        bar_interval_minutes: Number(resolution) || 1,
+        integration_id: activeIntegration?.id ?? undefined,
+        trading_mode: 'paper',
+      });
+      sessionId = sessionRes.data.session_id;
+    } catch (err) {
+      console.error('Failed to create bot session', err);
+      setLogs(prev => [...prev, 'Unable to create a paper bot session.']);
+      setSessionState('Error');
+      return;
+    }
+
+    const streamParams = new URLSearchParams({
+      session_id: sessionId,
+      symbol: selectedSymbol,
+      buy_threshold: String(buyThreshold ?? 30),
+      sell_threshold: String(sellThreshold ?? 70),
+      auto_trade: String(autoTrade),
+      quantity: String(quantity),
+      interval_seconds: String(intervalSeconds),
+    });
+    if (activeIntegration?.id) {
+      streamParams.set('integration_id', String(activeIntegration.id));
+    }
+    const url = `${API_BASE_URL}/scheduler/run-bot?${streamParams.toString()}`;
 
     const es = new EventSource(url);
     eventSourceRef.current = es;
@@ -343,8 +372,12 @@ function Dashboard() {
   const approveTrade = () => {
     if (!pendingTrade) return;
     api
-      .post('/scheduler/execute-trade', pendingTrade)
-      .then(() => setLogs(prev => [...prev, 'Manual trade executed']))
+      .post('/scheduler/execute-trade', {
+        ...pendingTrade,
+        integration_id: activeIntegration?.id ?? undefined,
+        trading_mode: 'paper',
+      })
+      .then(() => setLogs(prev => [...prev, 'Paper trade simulated']))
       .catch(err => {
         console.error('Manual trade failed', err);
         setLogs(prev => [...prev, 'Manual trade failed']);
@@ -566,7 +599,7 @@ function Dashboard() {
               className={autoTrade ? 'active' : ''}
               onClick={() => {
                 setAutoTrade(true);
-                api.post('/scheduler/update-config', { auto_trade: true });
+                api.post('/scheduler/update-config', { auto_trade: true, trading_mode: 'paper' });
               }}
             >
               Auto Trade
@@ -599,6 +632,7 @@ function Dashboard() {
                     sell_threshold: sellThreshold,
                     quantity,
                     interval_seconds: intervalSeconds,
+                    trading_mode: 'paper',
                   })
                   .catch(err => console.error('Failed to sync bot rules', err));
               }}
