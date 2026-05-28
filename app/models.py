@@ -277,6 +277,78 @@ class RiskDecision(Base):
     )
 
 
+class ProviderReconciliationRun(Base):
+    __tablename__ = "provider_reconciliation_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    symbol = Column(String, nullable=True, index=True)
+    provider_order_id = Column(String, nullable=True, index=True)
+    client_order_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    summary = Column(JSON, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_provider_reconciliation_runs_scope", "user_id", "integration_id", "account_id", "status"),
+    )
+
+
+class ProviderReconciliationEvent(Base):
+    __tablename__ = "provider_reconciliation_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, ForeignKey("provider_reconciliation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    provider_status = Column(String, nullable=True)
+    normalized_status = Column(String, nullable=True, index=True)
+    message = Column(Text, nullable=False)
+    provider_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProviderRetryDecision(Base):
+    __tablename__ = "provider_retry_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    paper_order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider_order_id = Column(String, nullable=True, index=True)
+    client_order_id = Column(String, nullable=True, index=True)
+    error_type = Column(String, nullable=False, index=True)
+    retryable = Column(Integer, nullable=False, default=0)
+    requires_reconciliation = Column(Integer, nullable=False, default=1)
+    decision = Column(String, nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    decision_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AccountReconciliationLock(Base):
+    __tablename__ = "account_reconciliation_locks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    active = Column(Integer, nullable=False, default=1, index=True)
+    reason = Column(Text, nullable=False)
+    run_id = Column(Integer, ForeignKey("provider_reconciliation_runs.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    cleared_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_account_reconciliation_locks_scope_active", "user_id", "integration_id", "account_id", "active"),
+    )
+
+
 class StrategyConfig(Base):
     __tablename__ = "strategy_configs"
 

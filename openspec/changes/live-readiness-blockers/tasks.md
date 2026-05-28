@@ -65,19 +65,19 @@
 
 ## Phase 4: Broker Reconciliation and Retry Design
 
-- [ ] 4.1 [P0] Add provider reconciliation service for order status, fills, open orders, and positions.
+- [x] 4.1 [P0] Add provider reconciliation service for order status, fills, open orders, and positions.
   - Why it blocks live readiness: provider state is authoritative for live accounts and must be reconciled before decisions.
   - Acceptance criteria: service can reconcile by provider order id, client order id, account, and symbol; mismatches create reconciliation_required state.
   - Tests required: fake provider tests for accepted, filled, partial fill, canceled, rejected, missing order, and mismatched position.
-- [ ] 4.2 [P0] Implement timeout and unknown-state handling that blocks blind retries.
+- [x] 4.2 [P0] Implement timeout and unknown-state handling that blocks blind retries.
   - Why it blocks live readiness: retrying after unknown submission can create duplicate live orders.
   - Acceptance criteria: network timeout after possible submission marks order `timeout_unknown`; retry is blocked until provider lookup proves no accepted order exists.
   - Tests required: timeout-before-send, timeout-after-send, lookup-found, lookup-not-found, lookup-provider-down tests.
-- [ ] 4.3 [P0] Add safe retry policy with explicit retryability classification.
+- [x] 4.3 [P0] Add safe retry policy with explicit retryability classification.
   - Why it blocks live readiness: only known-safe failures should be retried.
   - Acceptance criteria: retry policy distinguishes validation rejection, auth failure, rate limit, provider unavailable, timeout_unknown, and rejected states.
   - Tests required: provider error taxonomy tests and retry decision matrix tests.
-- [ ] 4.4 [P1] Add reconciliation jobs/worker design and operator controls.
+- [x] 4.4 [P1] Add reconciliation jobs/worker design and operator controls.
   - Why it blocks live readiness: live state can drift outside request/response paths.
   - Acceptance criteria: reconciliation can be run on demand and scheduled; accounts with unresolved mismatch block new live orders.
   - Tests required: idempotent job tests, stale job lease tests, and account lockout tests.

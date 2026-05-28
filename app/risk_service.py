@@ -349,6 +349,19 @@ class RiskService:
             integration_id=intent.integration_id,
             account_id=intent.account_id,
         )
+        reconciliation_lock = (
+            db.query(models.AccountReconciliationLock)
+            .filter(models.AccountReconciliationLock.user_id == intent.user_id, models.AccountReconciliationLock.active == 1)
+        )
+        if intent.integration_id is None:
+            reconciliation_lock = reconciliation_lock.filter(models.AccountReconciliationLock.integration_id.is_(None))
+        else:
+            reconciliation_lock = reconciliation_lock.filter(models.AccountReconciliationLock.integration_id == intent.integration_id)
+        if intent.account_id is None:
+            reconciliation_lock = reconciliation_lock.filter(models.AccountReconciliationLock.account_id.is_(None))
+        else:
+            reconciliation_lock = reconciliation_lock.filter(models.AccountReconciliationLock.account_id == intent.account_id)
+        active_reconciliation_lock = reconciliation_lock.first()
 
         if intent.trading_mode == LIVE_MODE:
             allowed = False
@@ -364,6 +377,10 @@ class RiskService:
             allowed = False
             reason_code = "kill_switch_active"
             reason = kill_switch.reason or "Kill switch is active for this trading scope."
+        elif active_reconciliation_lock:
+            allowed = False
+            reason_code = "reconciliation_required"
+            reason = active_reconciliation_lock.reason
         elif intent.quantity > settings.max_quantity:
             allowed = False
             reason_code = "max_quantity_exceeded"
