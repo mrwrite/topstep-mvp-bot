@@ -18,6 +18,7 @@ from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability
 from app.paper_execution import execute_paper_order, get_paper_order, list_open_paper_orders, list_paper_positions
 from app.observability import log_event
+from app.risk_service import risk_service
 from app.strategy_engine import (
     create_strategy_config,
     mark_signal_executed,
@@ -165,6 +166,12 @@ def create_bot_session(
         require_contract=True,
     )
     integration = context.integration
+    risk_service.assert_no_active_kill_switch(
+        db,
+        user_id=current_user.id,
+        integration_id=integration.id,
+        account_id=context.account_id,
+    )
 
     state_for_user["stop"] = False
     session_id = uuid4().hex

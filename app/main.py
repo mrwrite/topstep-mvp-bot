@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from . import auth_routes, integrations_routes, models, database, scheduler, contracts
+from . import auth_routes, integrations_routes, models, database, scheduler, contracts, risk_routes
 from . import analysis_routes
 from . import demo
 from . import health
@@ -27,6 +27,7 @@ app.include_router(scheduler.router, prefix="/scheduler", tags=["scheduler"])
 app.include_router(contracts.router, tags=["contracts"])
 app.include_router(analysis_routes.router, prefix="/analysis", tags=["analysis"])
 app.include_router(trading_router, prefix="/trading", tags=["trading"])
+app.include_router(risk_routes.router, prefix="/risk", tags=["risk"])
 app.include_router(health.router, tags=["health"])
 app.include_router(demo.router)
 

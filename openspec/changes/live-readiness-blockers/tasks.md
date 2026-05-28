@@ -19,23 +19,23 @@
 
 ## Phase 2: Persisted Risk Settings and Kill Switch
 
-- [ ] 2.1 [P0] Add Alembic migrations for risk settings, daily risk state, risk decisions, and risk lockout events.
+- [x] 2.1 [P0] Add Alembic migrations for risk settings, daily risk state, risk decisions, and risk lockout events.
   - Why it blocks live readiness: risk rules must survive restarts and be auditable per account.
   - Acceptance criteria: schema supports max daily loss, max trade size, max contracts, max open positions, allowed modes, reset policy, and effective timestamps.
   - Tests required: migration tests, model tests, uniqueness/scope tests, and risk setting CRUD tests.
-- [ ] 2.2 [P0] Enforce persisted risk settings before every paper or live order intent.
+- [x] 2.2 [P0] Enforce persisted risk settings before every paper or live order intent.
   - Why it blocks live readiness: live orders cannot rely on hardcoded defensive limits.
   - Acceptance criteria: missing or disabled risk settings block live; paper uses safe defaults only when explicitly marked as paper/demo.
   - Tests required: order tests for missing policy, exceeded quantity, exceeded position, max daily loss, inactive policy, and paper default behavior.
-- [ ] 2.3 [P0] Add persisted user/account/integration kill switch records and authenticated stop endpoints.
+- [x] 2.3 [P0] Add persisted user/account/integration kill switch records and authenticated stop endpoints.
   - Why it blocks live readiness: stop state must be durable, scoped, and audit visible.
   - Acceptance criteria: active kill switch blocks new orders and bot sessions in scope; stop endpoint records actor, reason, scope, timestamp, and clear/reset state.
   - Tests required: API tests for account kill switch, user-wide switch, cross-user isolation, bot stop interaction, and order blocking.
-- [ ] 2.4 [P0] Add account/equity checks to risk decisions for live mode and fail closed when provider account state is unavailable.
+- [x] 2.4 [P0] Add account/equity checks to risk decisions for live mode and fail closed when provider account state is unavailable.
   - Why it blocks live readiness: order size and daily loss cannot be evaluated without account state.
   - Acceptance criteria: live mode requires fresh account/equity snapshot; stale/unavailable data blocks live order creation.
   - Tests required: fake provider tests for fresh equity, stale equity, missing buying power, provider auth failure, and provider unavailable.
-- [ ] 2.5 [P1] Add risk decision audit and user-visible lockout reason APIs.
+- [x] 2.5 [P1] Add risk decision audit and user-visible lockout reason APIs.
   - Why it blocks live readiness: users and support need explainable risk lockouts.
   - Acceptance criteria: risk decisions are queryable by user/account/order and redact provider-sensitive details.
   - Tests required: audit visibility tests and lockout endpoint tests.

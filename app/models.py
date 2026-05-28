@@ -110,6 +110,119 @@ class PaperPosition(Base):
     )
 
 
+class RiskSettings(Base):
+    __tablename__ = "risk_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    trading_mode = Column(String, nullable=False, default="paper")
+    enabled = Column(Integer, nullable=False, default=1)
+    max_quantity = Column(Integer, nullable=False, default=1)
+    max_contracts = Column(Integer, nullable=False, default=1)
+    max_daily_loss = Column(Float, nullable=False, default=0.0)
+    max_open_positions = Column(Integer, nullable=False, default=1)
+    live_trading_enabled = Column(Integer, nullable=False, default=0)
+    reset_policy = Column(String, nullable=False, default="daily")
+    effective_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_risk_settings_scope", "user_id", "integration_id", "account_id", "trading_mode"),
+    )
+
+
+class DailyRiskState(Base):
+    __tablename__ = "daily_risk_states"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    trading_mode = Column(String, nullable=False, default="paper")
+    trading_day = Column(String, nullable=False, index=True)
+    realized_pnl = Column(Float, nullable=False, default=0.0)
+    equity = Column(Float, nullable=True)
+    buying_power = Column(Float, nullable=True)
+    locked = Column(Integer, nullable=False, default=0)
+    lock_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_daily_risk_states_scope_day", "user_id", "integration_id", "account_id", "trading_mode", "trading_day"),
+    )
+
+
+class KillSwitch(Base):
+    __tablename__ = "kill_switches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    bot_session_id = Column(String, nullable=True, index=True)
+    active = Column(Integer, nullable=False, default=1, index=True)
+    reason = Column(Text, nullable=True)
+    activated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deactivated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    activated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    deactivated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_kill_switches_scope_active", "user_id", "integration_id", "account_id", "bot_session_id", "active"),
+    )
+
+
+class RiskLockoutEvent(Base):
+    __tablename__ = "risk_lockout_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    risk_settings_id = Column(Integer, ForeignKey("risk_settings.id", ondelete="SET NULL"), nullable=True)
+    kill_switch_id = Column(Integer, ForeignKey("kill_switches.id", ondelete="SET NULL"), nullable=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    trading_mode = Column(String, nullable=False, default="paper")
+    reason = Column(Text, nullable=False)
+    active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    cleared_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_risk_lockout_events_scope_active", "user_id", "integration_id", "account_id", "trading_mode", "active"),
+    )
+
+
+class RiskDecision(Base):
+    __tablename__ = "risk_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    risk_settings_id = Column(Integer, ForeignKey("risk_settings.id", ondelete="SET NULL"), nullable=True)
+    kill_switch_id = Column(Integer, ForeignKey("kill_switches.id", ondelete="SET NULL"), nullable=True)
+    paper_order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    symbol = Column(String, nullable=True, index=True)
+    side = Column(String, nullable=True)
+    quantity = Column(Integer, nullable=True)
+    trading_mode = Column(String, nullable=False)
+    source = Column(String, nullable=True)
+    allowed = Column(Integer, nullable=False, default=0, index=True)
+    reason_code = Column(String, nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    decision_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_risk_decisions_user_created", "user_id", "created_at"),
+    )
+
+
 class StrategyConfig(Base):
     __tablename__ = "strategy_configs"
 

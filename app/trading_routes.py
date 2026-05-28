@@ -40,7 +40,7 @@ async def test_trade(
     integration = context.integration
     intent = build_order_intent(
         user_id=current_user.id,
-        symbol="NQU5",
+        symbol="ES",
         side="BUY",
         quantity=1,
         trading_mode=context.trading_mode,

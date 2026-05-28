@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.observability import log_event
+from app.risk_service import risk_service
 from app.trading_safety import PAPER_MODE, OrderIntent
 
 
@@ -214,6 +215,7 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
         )
         return _serialize_order(db, existing, duplicate=True)
 
+    risk_decision = risk_service.evaluate_order_intent(db, intent)
     now = datetime.utcnow()
     order = models.PaperOrder(
         user_id=intent.user_id,
@@ -232,6 +234,7 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
     )
     db.add(order)
     db.flush()
+    risk_decision.paper_order_id = order.id
     order.provider_order_id = f"paper-{order.id}"
     _event(
         db,

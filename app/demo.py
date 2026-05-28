@@ -11,6 +11,7 @@ from app.auth_routes import get_current_user_model
 from app.crypto import encrypt_credentials
 from app.observability import log_event
 from app.paper_execution import execute_paper_order
+from app.risk_service import risk_service
 from app.strategy import STRATEGY_NAME, STRATEGY_VERSION
 from app.strategy_engine import create_strategy_config
 from app.trading_safety import build_order_intent
@@ -80,6 +81,14 @@ def _delete_demo_data(db: Session, user_id: int) -> dict[str, int]:
     ).delete(synchronize_session=False)
 
     if integration_ids:
+        db.query(models.RiskDecision).filter(
+            models.RiskDecision.user_id == user_id,
+            models.RiskDecision.integration_id.in_(integration_ids),
+        ).delete(synchronize_session=False)
+        db.query(models.RiskSettings).filter(
+            models.RiskSettings.user_id == user_id,
+            models.RiskSettings.integration_id.in_(integration_ids),
+        ).delete(synchronize_session=False)
         user = db.query(models.User).filter(models.User.id == user_id).first()
         if user and user.active_integration_id in integration_ids:
             user.active_integration_id = None
@@ -227,6 +236,17 @@ def seed_demo_package(
 
     current_user.active_integration_id = integration.id
     db.flush()
+    risk_service.update_settings(
+        db,
+        user_id=current_user.id,
+        integration_id=integration.id,
+        account_id=DEMO_ACCOUNT_ID,
+        trading_mode="paper",
+        max_quantity=1,
+        max_contracts=1,
+        max_daily_loss=0,
+        max_open_positions=len(DEMO_CONTRACTS),
+    )
 
     order_one = execute_paper_order(
         db,

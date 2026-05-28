@@ -95,11 +95,6 @@ def build_order_intent(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="quantity must be at least 1.",
         )
-    if quantity > 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Phase 1 defensive risk guard allows a maximum quantity of 1.",
-        )
 
     mode = normalize_mode(trading_mode)
     assert_live_trading_blocked(mode)
