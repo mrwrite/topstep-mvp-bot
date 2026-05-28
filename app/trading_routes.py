@@ -22,6 +22,9 @@ class TradingSignal(BaseModel):
     secret: str | None = None
     trading_mode: str = "paper"
     order_type: str = "market"
+    limit_price: float | None = None
+    stop_price: float | None = None
+    reference_price: float | None = None
     idempotency_key: str | None = None
 
 @router.get("/test-trade")
@@ -127,6 +130,9 @@ async def receive_signal(
         integration_id=broker_integration.id if broker_integration else None,
         idempotency_key=signal.idempotency_key,
         source="webhook",
+        reference_price=signal.reference_price,
+        limit_price=signal.limit_price,
+        stop_price=signal.stop_price,
     )
     result = execute_paper_order(db, intent)
     return {"status": "duplicate" if result["duplicate"] else "received", "result": result}

@@ -323,6 +323,25 @@ class RiskService:
             "max_open_positions": settings.max_open_positions,
             "live_trading_enabled": bool(settings.live_trading_enabled),
         }
+        snapshot_query = db.query(models.PaperAccountSnapshot).filter(models.PaperAccountSnapshot.user_id == intent.user_id)
+        if intent.integration_id is None:
+            snapshot_query = snapshot_query.filter(models.PaperAccountSnapshot.integration_id.is_(None))
+        else:
+            snapshot_query = snapshot_query.filter(models.PaperAccountSnapshot.integration_id == intent.integration_id)
+        if intent.account_id is None:
+            snapshot_query = snapshot_query.filter(models.PaperAccountSnapshot.account_id.is_(None))
+        else:
+            snapshot_query = snapshot_query.filter(models.PaperAccountSnapshot.account_id == intent.account_id)
+        snapshot = snapshot_query.order_by(models.PaperAccountSnapshot.updated_at.desc()).first()
+        if snapshot:
+            metadata["paper_account"] = {
+                "snapshot_id": snapshot.id,
+                "cash_balance": snapshot.cash_balance,
+                "equity": snapshot.equity,
+                "buying_power": snapshot.buying_power,
+                "realized_pnl": snapshot.realized_pnl,
+                "unrealized_pnl": snapshot.unrealized_pnl,
+            }
 
         kill_switch = self.find_active_kill_switch(
             db,

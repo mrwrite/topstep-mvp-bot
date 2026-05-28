@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 
 PAPER_MODE = "paper"
 LIVE_MODE = "live"
-SUPPORTED_ORDER_TYPES = {"market"}
+SUPPORTED_ORDER_TYPES = {"market", "limit", "stop", "stop-limit"}
 SUPPORTED_MODES = {PAPER_MODE, LIVE_MODE}
 SUPPORTED_SIDES = {"BUY", "SELL"}
 
@@ -28,6 +28,8 @@ class OrderIntent:
     idempotency_key: str | None = None
     source: str = "manual"
     reference_price: float | None = None
+    limit_price: float | None = None
+    stop_price: float | None = None
 
 
 def normalize_mode(mode: str | None) -> str:
@@ -55,7 +57,7 @@ def normalize_order_type(order_type: str | None) -> str:
     if normalized not in SUPPORTED_ORDER_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Only market paper orders are currently supported.",
+            detail="order_type must be market, limit, stop, or stop-limit.",
         )
     return normalized
 
@@ -84,6 +86,8 @@ def build_order_intent(
     idempotency_key: str | None = None,
     source: str = "manual",
     reference_price: float | None = None,
+    limit_price: float | None = None,
+    stop_price: float | None = None,
 ) -> OrderIntent:
     if not symbol or not symbol.strip():
         raise HTTPException(
@@ -98,6 +102,27 @@ def build_order_intent(
 
     mode = normalize_mode(trading_mode)
     assert_live_trading_blocked(mode)
+    normalized_order_type = normalize_order_type(order_type)
+    if limit_price is not None and limit_price <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit_price must be greater than 0.",
+        )
+    if stop_price is not None and stop_price <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="stop_price must be greater than 0.",
+        )
+    if normalized_order_type in {"limit", "stop-limit"} and limit_price is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit_price is required for limit and stop-limit paper orders.",
+        )
+    if normalized_order_type in {"stop", "stop-limit"} and stop_price is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="stop_price is required for stop and stop-limit paper orders.",
+        )
 
     return OrderIntent(
         user_id=user_id,
@@ -105,12 +130,14 @@ def build_order_intent(
         side=normalize_side(side),
         quantity=quantity,
         trading_mode=mode,
-        order_type=normalize_order_type(order_type),
+        order_type=normalized_order_type,
         integration_id=integration_id,
         account_id=account_id,
         idempotency_key=idempotency_key,
         source=source,
         reference_price=reference_price,
+        limit_price=limit_price,
+        stop_price=stop_price,
     )
 
 
@@ -134,5 +161,7 @@ def simulate_paper_order(intent: OrderIntent) -> dict[str, Any]:
             "source": intent.source,
             "idempotency_key": intent.idempotency_key,
             "reference_price": intent.reference_price,
+            "limit_price": intent.limit_price,
+            "stop_price": intent.stop_price,
         },
     }

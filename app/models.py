@@ -54,10 +54,16 @@ class PaperOrder(Base):
     quantity = Column(Integer, nullable=False)
     trading_mode = Column(String, nullable=False, default="paper")
     order_type = Column(String, nullable=False, default="market")
+    limit_price = Column(Float, nullable=True)
+    stop_price = Column(Float, nullable=True)
     source = Column(String, nullable=False)
     idempotency_key = Column(String, nullable=False)
+    order_fingerprint = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, default="submitted", index=True)
     provider_order_id = Column(String, nullable=True, index=True)
+    filled_quantity = Column(Integer, nullable=False, default=0)
+    remaining_quantity = Column(Integer, nullable=False, default=0)
+    rejected_reason = Column(Text, nullable=True)
     response = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -65,6 +71,7 @@ class PaperOrder(Base):
     __table_args__ = (
         Index("ux_paper_orders_user_idempotency", "user_id", "idempotency_key", unique=True),
         Index("ix_paper_orders_user_status", "user_id", "status"),
+        Index("ix_paper_orders_user_fingerprint_created", "user_id", "order_fingerprint", "created_at"),
     )
 
 
@@ -103,10 +110,57 @@ class PaperPosition(Base):
     account_id = Column(String, nullable=True)
     symbol = Column(String, nullable=False, index=True)
     quantity = Column(Integer, nullable=False, default=0)
+    avg_price = Column(Float, nullable=False, default=0.0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         Index("ux_paper_positions_scope", "user_id", "integration_id", "account_id", "symbol", unique=True),
+    )
+
+
+class PaperAccountSnapshot(Base):
+    __tablename__ = "paper_account_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    cash_balance = Column(Float, nullable=False, default=100000.0)
+    equity = Column(Float, nullable=False, default=100000.0)
+    buying_power = Column(Float, nullable=False, default=100000.0)
+    realized_pnl = Column(Float, nullable=False, default=0.0)
+    unrealized_pnl = Column(Float, nullable=False, default=0.0)
+    margin_used = Column(Float, nullable=False, default=0.0)
+    last_mark_price = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_paper_account_snapshots_scope", "user_id", "integration_id", "account_id"),
+    )
+
+
+class PaperLedgerEntry(Base):
+    __tablename__ = "paper_ledger_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(String, nullable=True)
+    paper_order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    entry_type = Column(String, nullable=False, index=True)
+    amount = Column(Float, nullable=False, default=0.0)
+    cash_balance = Column(Float, nullable=False)
+    equity = Column(Float, nullable=False)
+    buying_power = Column(Float, nullable=False)
+    realized_pnl = Column(Float, nullable=False, default=0.0)
+    unrealized_pnl = Column(Float, nullable=False, default=0.0)
+    description = Column(Text, nullable=True)
+    entry_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_paper_ledger_entries_scope_created", "user_id", "integration_id", "account_id", "created_at"),
     )
 
 

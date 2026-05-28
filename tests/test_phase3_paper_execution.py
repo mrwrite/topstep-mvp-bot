@@ -88,7 +88,13 @@ def test_manual_paper_order_has_lifecycle_idempotency_fill_and_position():
     assert body["status"] == "filled"
     assert body["order"]["status"] == "filled"
     assert body["order"]["idempotency_key"] == "manual-1"
-    assert [event["event_type"] for event in body["events"]] == ["submitted", "accepted", "filled"]
+    assert [event["event_type"] for event in body["events"]] == [
+        "created",
+        "pending_submit",
+        "submitted",
+        "accepted",
+        "filled",
+    ]
     assert body["fills"][0]["quantity"] == 1
     assert body["position"]["quantity"] == 1
 

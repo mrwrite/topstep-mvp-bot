@@ -42,23 +42,23 @@
 
 ## Phase 3: Paper Ledger and Order Lifecycle Depth
 
-- [ ] 3.1 [P0] Add paper account ledger, account snapshots, and equity/PnL models with migrations.
+- [x] 3.1 [P0] Add paper account ledger, account snapshots, and equity/PnL models with migrations.
   - Why it blocks live readiness: paper mode must validate risk/equity workflows before any controlled live rollout.
   - Acceptance criteria: ledger records starting balance, reservations, fills, realized PnL, unrealized marks, fees/slippage assumptions, and adjustments.
   - Tests required: migration tests, ledger balance tests, PnL tests, and user/account isolation tests.
-- [ ] 3.2 [P0] Expand order lifecycle states and enforce valid state transitions.
+- [x] 3.2 [P0] Expand order lifecycle states and enforce valid state transitions.
   - Why it blocks live readiness: live execution requires durable non-terminal, terminal, failed, and unknown states.
   - Acceptance criteria: orders support created, risk_blocked, pending_submit, submitted, accepted, rejected, partially_filled, filled, cancel_requested, canceled, expired, timeout_unknown, reconciliation_required, and failed.
   - Tests required: state machine tests for valid and invalid transitions, partial fills, cancel, timeout, and rejection.
-- [ ] 3.3 [P0] Add duplicate-order protection beyond idempotency using normalized order/signal fingerprints and time windows.
+- [x] 3.3 [P0] Add duplicate-order protection beyond idempotency using normalized order/signal fingerprints and time windows.
   - Why it blocks live readiness: repeated bot signals, webhook retries, and UI double-clicks can still duplicate orders with new idempotency keys.
   - Acceptance criteria: duplicate fingerprints suppress or require confirmation before creating a second order; suppression is audited.
   - Tests required: webhook retry, UI repeat, bot same-candle repeat, same key different payload, and allowed distinct order tests.
-- [ ] 3.4 [P1] Support market, limit, stop, and stop-limit schemas in paper mode with provider capability metadata.
+- [x] 3.4 [P1] Support market, limit, stop, and stop-limit schemas in paper mode with provider capability metadata.
   - Why it blocks live readiness: order schemas must be validated before provider routing exists.
   - Acceptance criteria: unsupported order types are rejected; paper mode simulates valid order types according to documented assumptions.
   - Tests required: schema validation, limit fill, stop trigger, stop-limit non-fill, unsupported provider capability tests.
-- [ ] 3.5 [P1] Replace CSV trade logging as any remaining authoritative source with queryable order/audit APIs.
+- [x] 3.5 [P1] Replace CSV trade logging as any remaining authoritative source with queryable order/audit APIs.
   - Why it blocks live readiness: CSV logs are not sufficient for live audit or support.
   - Acceptance criteria: every paper order action has DB order events and audit events; CSV is optional development output only.
   - Tests required: order audit API tests and CSV-disabled production tests.

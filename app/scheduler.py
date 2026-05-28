@@ -16,7 +16,14 @@ from app.indicators import compute_indicators
 from app.providers.factory import get_adapter
 from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability
-from app.paper_execution import execute_paper_order, get_paper_order, list_open_paper_orders, list_paper_positions
+from app.paper_execution import (
+    execute_paper_order,
+    get_paper_order,
+    list_open_paper_orders,
+    list_paper_account_snapshots,
+    list_paper_ledger_entries,
+    list_paper_positions,
+)
 from app.observability import log_event
 from app.risk_service import risk_service
 from app.strategy_engine import (
@@ -79,6 +86,9 @@ class TradeRequest(BaseModel):
     integration_id: int | None = None
     trading_mode: str = "paper"
     order_type: str = "market"
+    limit_price: float | None = Field(default=None, gt=0)
+    stop_price: float | None = Field(default=None, gt=0)
+    reference_price: float | None = Field(default=None, gt=0)
     account_id: str | None = None
     idempotency_key: str | None = None
 
@@ -313,6 +323,9 @@ async def execute_trade_endpoint(
         account_id=context.account_id,
         idempotency_key=order.idempotency_key,
         source="manual",
+        reference_price=order.reference_price,
+        limit_price=order.limit_price,
+        stop_price=order.stop_price,
     )
     response = execute_paper_order(db, intent)
     log_trade(intent.symbol, intent.side, intent.quantity, 0, "PAPER", str(response))
@@ -342,6 +355,22 @@ def get_positions(
     current_user: models.User = Depends(get_current_user_model),
 ):
     return list_paper_positions(db, user_id=current_user.id)
+
+
+@router.get("/paper-accounts")
+def get_paper_accounts(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user_model),
+):
+    return list_paper_account_snapshots(db, user_id=current_user.id)
+
+
+@router.get("/paper-ledger")
+def get_paper_ledger(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user_model),
+):
+    return list_paper_ledger_entries(db, user_id=current_user.id)
 
 
 def fetch_price_data(adapter: TopStepXAdapter, symbol: str, interval_minutes=1, lookback_minutes=100):

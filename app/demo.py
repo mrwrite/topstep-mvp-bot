@@ -48,6 +48,9 @@ def _delete_demo_data(db: Session, user_id: int) -> dict[str, int]:
     )
     demo_order_ids = [order.id for order in demo_orders]
     if demo_order_ids:
+        db.query(models.PaperLedgerEntry).filter(models.PaperLedgerEntry.paper_order_id.in_(demo_order_ids)).delete(
+            synchronize_session=False
+        )
         db.query(models.PaperFill).filter(models.PaperFill.order_id.in_(demo_order_ids)).delete(
             synchronize_session=False
         )
@@ -78,6 +81,10 @@ def _delete_demo_data(db: Session, user_id: int) -> dict[str, int]:
     db.query(models.PaperPosition).filter(
         models.PaperPosition.user_id == user_id,
         models.PaperPosition.account_id == DEMO_ACCOUNT_ID,
+    ).delete(synchronize_session=False)
+    db.query(models.PaperAccountSnapshot).filter(
+        models.PaperAccountSnapshot.user_id == user_id,
+        models.PaperAccountSnapshot.account_id == DEMO_ACCOUNT_ID,
     ).delete(synchronize_session=False)
 
     if integration_ids:
