@@ -73,18 +73,18 @@
 
 ## 6. Phase 6: Production Readiness
 
-- [ ] 6.1 Add environment-specific configuration validation for development, test, demo, and production.
-- [ ] 6.2 Require explicit `CREDENTIALS_ENCRYPTION_KEY` in production and document credential rotation.
-- [ ] 6.3 Replace production reliance on `models.Base.metadata.create_all()` with Alembic migration readiness checks.
-- [ ] 6.4 Repair or document the migration baseline because the initial migration currently contains no table creation.
-- [ ] 6.5 Add `/health/live` and `/health/ready` endpoints covering app, database, migration state, and critical config.
-- [ ] 6.6 Add Railway backend deployment config or documentation with build, start, env, migration, health check, and worker assumptions.
-- [ ] 6.7 Add Vercel frontend deployment config or documentation with `VITE_API_URL`, allowed origins, and build command.
-- [ ] 6.8 Tighten production CORS origins, methods, headers, and security headers.
-- [ ] 6.9 Add rate limiting for auth, webhook, trading, contract, analysis, and provider diagnostic routes.
-- [ ] 6.10 Add structured JSON logging with redaction, request ids, user/session/order correlation, and provider error classification.
-- [ ] 6.11 Add monitoring/alerting for failed orders, risk lockouts, provider auth failures, webhook failures, and job/session failures.
-- [ ] 6.12 Document backup, restore, migration rollback, incident response, and trading disable procedures.
+- [x] 6.1 Add environment-specific configuration validation for development, test, demo, and production.
+- [x] 6.2 Require explicit `CREDENTIALS_ENCRYPTION_KEY` in production and document credential rotation.
+- [x] 6.3 Replace production reliance on `models.Base.metadata.create_all()` with Alembic migration readiness checks.
+- [x] 6.4 Repair or document the migration baseline because the initial migration currently contains no table creation.
+- [x] 6.5 Add `/health/live` and `/health/ready` endpoints covering app, database, migration state, and critical config.
+- [x] 6.6 Add Railway backend deployment config or documentation with build, start, env, migration, health check, and worker assumptions.
+- [x] 6.7 Add Vercel frontend deployment config or documentation with `VITE_API_URL`, allowed origins, and build command.
+- [x] 6.8 Tighten production CORS origins, methods, headers, and security headers.
+- [x] 6.9 Add rate limiting for auth, webhook, trading, contract, analysis, and provider diagnostic routes.
+- [x] 6.10 Add structured JSON logging with redaction, request ids, user/session/order correlation, and provider error classification.
+- [x] 6.11 Add monitoring/alerting for failed orders, risk lockouts, provider auth failures, webhook failures, and job/session failures.
+- [x] 6.12 Document backup, restore, migration rollback, incident response, and trading disable procedures.
 
 ## 7. Phase 7: Investor/Demo Package
 

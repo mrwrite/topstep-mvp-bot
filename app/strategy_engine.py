@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app import models
+from app.observability import log_event
 from app.strategy import STRATEGY_DESCRIPTION, STRATEGY_NAME, STRATEGY_VERSION, check_trade_signal
 from app.trading_safety import PAPER_MODE
 
@@ -237,6 +238,19 @@ def record_strategy_signal(
     db.add(signal_record)
     db.commit()
     db.refresh(signal_record)
+    log_event(
+        "strategy",
+        "strategy_signal_recorded",
+        user_id=config.user_id,
+        strategy_config_id=config.id,
+        signal_id=signal_record.id,
+        symbol=config.symbol,
+        signal=signal_record.signal,
+        status=signal_record.status,
+        reason=signal_record.reason,
+        integration_id=config.integration_id,
+        account_id=config.account_id,
+    )
     return signal_record
 
 

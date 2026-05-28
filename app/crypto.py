@@ -15,6 +15,9 @@ def _derive_key_from_secret(secret: str) -> bytes:
 def _get_fernet() -> Fernet:
     key = os.getenv("CREDENTIALS_ENCRYPTION_KEY")
     if not key:
+        app_env = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()
+        if app_env in {"production", "prod"}:
+            raise RuntimeError("CREDENTIALS_ENCRYPTION_KEY must be set explicitly in production.")
         secret = os.getenv("SECRET_KEY")
         if not secret:
             raise RuntimeError("SECRET_KEY must be set to derive the credentials encryption key.")

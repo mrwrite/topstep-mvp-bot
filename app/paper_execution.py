@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app import models
+from app.observability import log_event
 from app.trading_safety import PAPER_MODE, OrderIntent
 
 
@@ -199,6 +200,18 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="idempotency_key was already used for a different paper order.",
             )
+        log_event(
+            "trade_execution",
+            "paper_order_duplicate",
+            user_id=intent.user_id,
+            order_id=existing.id,
+            symbol=intent.symbol,
+            side=intent.side,
+            quantity=intent.quantity,
+            integration_id=intent.integration_id,
+            account_id=intent.account_id,
+            source=intent.source,
+        )
         return _serialize_order(db, existing, duplicate=True)
 
     now = datetime.utcnow()
@@ -280,6 +293,20 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
     order.response = response
     db.commit()
     db.refresh(order)
+    log_event(
+        "trade_execution",
+        "paper_order_filled",
+        user_id=intent.user_id,
+        order_id=order.id,
+        provider_order_id=order.provider_order_id,
+        symbol=intent.symbol,
+        side=intent.side,
+        quantity=intent.quantity,
+        integration_id=intent.integration_id,
+        account_id=intent.account_id,
+        source=intent.source,
+        live=False,
+    )
     return _serialize_order(db, order)
 
 

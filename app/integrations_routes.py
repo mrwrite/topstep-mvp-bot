@@ -5,6 +5,7 @@ from . import database, models
 from .auth_routes import get_current_user_model
 from .crypto import encrypt_credentials
 from .integrations_service import set_active_integration
+from .observability import log_event
 from .providers.base import ProviderCapabilityError
 from .providers.factory import get_adapter
 from .providers.types import (
@@ -167,6 +168,13 @@ def activate_integration(
         integration = set_active_integration(db, current_user.id, integration_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_event(
+        "integration",
+        "integration_activated",
+        user_id=current_user.id,
+        integration_id=integration.id,
+        provider=integration.provider,
+    )
     return {"active": _to_public(integration)}
 
 
@@ -194,6 +202,14 @@ async def list_integration_accounts(
             detail=str(exc),
         ) from exc
     except Exception as exc:
+        log_event(
+            "integration",
+            "provider_accounts_failed",
+            user_id=current_user.id,
+            integration_id=integration.id,
+            provider=integration.provider,
+            error=str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unable to fetch accounts for {integration.provider}.",

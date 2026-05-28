@@ -37,8 +37,10 @@ TRADINGVIEW_API_KEY=your-tradingview-api-key
 TRADINGVIEW_BASE_URL=https://api.tradingview.com  # optional
 ```
 
-> `CREDENTIALS_ENCRYPTION_KEY` is optional. If omitted, the backend derives an encryption key
-> from `SECRET_KEY`. Use an explicit Fernet key for production.
+> `CREDENTIALS_ENCRYPTION_KEY` is optional only outside production. Production startup requires an explicit Fernet key and `ALLOW_CREATE_ALL=false`.
+> Run Alembic migrations before marking a hosted backend ready.
+
+Production deployment notes are in [docs/deployment-readiness.md](docs/deployment-readiness.md).
 
 ## 🧭 New user onboarding & integrations
 
