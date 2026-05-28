@@ -631,6 +631,17 @@ button:disabled {
   color: var(--negative);
 }
 
+.demo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  margin: 0.75rem 0 1rem;
+}
+
 .auth-shell {
   min-height: 100vh;
   display: flex;

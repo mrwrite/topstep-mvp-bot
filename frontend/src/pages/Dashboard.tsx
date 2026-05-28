@@ -74,6 +74,27 @@ type StrategyMetrics = {
   assumptions?: string[];
 };
 
+type DemoStatus = {
+  seeded: boolean;
+  paper_only: boolean;
+  live_trading_enabled: boolean;
+  demo_account_id?: string | null;
+  demo_contracts: string[];
+  counts: {
+    integrations: number;
+    paper_orders: number;
+    paper_positions: number;
+    strategy_signals: number;
+  };
+  checklist: Array<{
+    label: string;
+    status: string;
+    detail: string;
+  }>;
+  disclaimer: string;
+  remaining_blockers: string[];
+};
+
 type TradePrompt = {
   side: string;
   price: number;
@@ -140,6 +161,8 @@ function Dashboard() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [strategySignals, setStrategySignals] = useState<StrategySignal[]>([]);
   const [strategyMetrics, setStrategyMetrics] = useState<StrategyMetrics | null>(null);
+  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
+  const [demoBusy, setDemoBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [countdown, setCountdown] = useState<number>(0);
   const [sessionState, setSessionState] = useState<SessionState>('Idle');
@@ -201,6 +224,15 @@ function Dashboard() {
     }
   };
 
+  const refreshDemoStatus = async () => {
+    try {
+      const res = await api.get('/demo/status');
+      setDemoStatus(res.data);
+    } catch (err) {
+      console.error('Failed to load demo status', err);
+    }
+  };
+
   useEffect(() => {
     api
       .get('/auth/me')
@@ -237,7 +269,38 @@ function Dashboard() {
       });
 
     refreshTradingState();
+    refreshDemoStatus();
   }, [navigate]);
+
+  const seedDemoPackage = async () => {
+    setDemoBusy(true);
+    try {
+      const res = await api.post('/demo/seed');
+      setDemoStatus(res.data);
+      setStatusMessage('Demo package loaded. Live trading remains disabled.');
+      await refreshTradingState();
+      api.get('/integrations').then(integrationRes => setIntegrations(integrationRes.data ?? []));
+    } catch (err) {
+      setStatusMessage(apiMessage(err, 'Unable to load demo package.'));
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  const resetDemoPackage = async () => {
+    setDemoBusy(true);
+    try {
+      const res = await api.post('/demo/reset');
+      setDemoStatus(res.data);
+      setStatusMessage('Demo package reset.');
+      await refreshTradingState();
+      api.get('/integrations').then(integrationRes => setIntegrations(integrationRes.data ?? []));
+    } catch (err) {
+      setStatusMessage(apiMessage(err, 'Unable to reset demo package.'));
+    } finally {
+      setDemoBusy(false);
+    }
+  };
 
   useEffect(() => {
     const loadAccountsAndDiagnostics = async () => {
@@ -605,6 +668,42 @@ function Dashboard() {
             </div>
           )}
           {statusMessage && <div className="inline-alert">{statusMessage}</div>}
+
+          <div className="demo-panel">
+            <div>
+              <p className="eyebrow">Investor demo</p>
+              <strong>{demoStatus?.seeded ? 'Demo data loaded' : 'Paper-only package'}</strong>
+              <p className="muted tiny">
+                {demoStatus?.disclaimer ??
+                  'Demo mode uses simulated paper orders only. Live trading is disabled.'}
+              </p>
+            </div>
+            <div className="button-row">
+              <button type="button" className="ghost compact" onClick={seedDemoPackage} disabled={demoBusy}>
+                Load demo
+              </button>
+              <button type="button" className="ghost compact" onClick={resetDemoPackage} disabled={demoBusy || !demoStatus?.seeded}>
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {demoStatus?.seeded && (
+            <div className="simple-list compact-list">
+              <div className="list-row">
+                <span>Demo account</span>
+                <strong>{demoStatus.demo_account_id}</strong>
+              </div>
+              <div className="list-row">
+                <span>Paper orders</span>
+                <strong>{demoStatus.counts.paper_orders}</strong>
+              </div>
+              <div className="list-row">
+                <span>Live status</span>
+                <strong>{demoStatus.live_trading_enabled ? 'Enabled' : 'Disabled'}</strong>
+              </div>
+            </div>
+          )}
 
           <div className="readiness-list">
             {readinessItems.map(item => (

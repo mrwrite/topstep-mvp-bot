@@ -88,11 +88,11 @@
 
 ## 7. Phase 7: Investor/Demo Package
 
-- [ ] 7.1 Create a demo mode that uses paper trading or mocked providers only and cannot route to live broker adapters.
-- [ ] 7.2 Seed safe demo integrations, demo accounts, demo contracts, sample strategy configs, and sample audit/order history.
-- [ ] 7.3 Add investor-facing dashboard flow showing readiness checklist, paper orders, risk controls, audit trail, and provider status.
-- [ ] 7.4 Add paper trading disclaimer, live trading risk disclaimer, no guaranteed profit language, and user responsibility acknowledgement.
-- [ ] 7.5 Add terms/privacy placeholders or links required before consumer account rollout.
-- [ ] 7.6 Add demo reset tooling that clears only demo data and preserves production safeguards.
-- [ ] 7.7 Add a smoke test script covering register/login, create integration, select account/contract, start paper session, place paper order, stop session, and view audit trail.
-- [ ] 7.8 Produce a launch-readiness checklist that separates demo-ready, paper-ready, and live-ready criteria.
+- [x] 7.1 Create a demo mode that uses paper trading or mocked providers only and cannot route to live broker adapters.
+- [x] 7.2 Seed safe demo integrations, demo accounts, demo contracts, sample strategy configs, and sample audit/order history.
+- [x] 7.3 Add investor-facing dashboard flow showing readiness checklist, paper orders, risk controls, audit trail, and provider status.
+- [x] 7.4 Add paper trading disclaimer, live trading risk disclaimer, no guaranteed profit language, and user responsibility acknowledgement.
+- [x] 7.5 Add terms/privacy placeholders or links required before consumer account rollout.
+- [x] 7.6 Add demo reset tooling that clears only demo data and preserves production safeguards.
+- [x] 7.7 Add a smoke test script covering register/login, create integration, select account/contract, start paper session, place paper order, stop session, and view audit trail.
+- [x] 7.8 Produce a launch-readiness checklist that separates demo-ready, paper-ready, and live-ready criteria.

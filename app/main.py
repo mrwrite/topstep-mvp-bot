@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from . import auth_routes, integrations_routes, models, database, scheduler, contracts
 from . import analysis_routes
+from . import demo
 from . import health
 from .database import engine
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,7 @@ app.include_router(contracts.router, tags=["contracts"])
 app.include_router(analysis_routes.router, prefix="/analysis", tags=["analysis"])
 app.include_router(trading_router, prefix="/trading", tags=["trading"])
 app.include_router(health.router, tags=["health"])
+app.include_router(demo.router)
 
 cors_origins = default_cors_origins(database.APP_CONFIG)
 allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]

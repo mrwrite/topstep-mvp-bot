@@ -42,6 +42,20 @@ TRADINGVIEW_BASE_URL=https://api.tradingview.com  # optional
 
 Production deployment notes are in [docs/deployment-readiness.md](docs/deployment-readiness.md).
 
+## Investor demo
+
+This app is safe only for paper-trading demos. Live broker order execution is disabled.
+
+Demo workflow:
+
+1. Start the backend and frontend.
+2. Register or log in.
+3. Open the dashboard and select `Load demo`.
+4. Review seeded paper orders, paper positions, strategy metrics, provider status, and readiness blockers.
+5. Select `Reset` after the walkthrough.
+
+Additional demo guidance is in [docs/investor-demo-package.md](docs/investor-demo-package.md), with remaining blockers in [docs/launch-readiness-checklist.md](docs/launch-readiness-checklist.md). Terms and privacy placeholders live in [docs/terms-placeholder.md](docs/terms-placeholder.md) and [docs/privacy-placeholder.md](docs/privacy-placeholder.md).
+
 ## 🧭 New user onboarding & integrations
 
 1. Start the backend and frontend (see setup above).
