@@ -24,6 +24,9 @@ class AppConfig:
     allow_create_all: bool
     rate_limit_requests_per_minute: int
     log_level: str
+    resend_api_key: str | None
+    resend_from_email: str
+    frontend_url: str
 
     @property
     def is_production(self) -> bool:
@@ -56,6 +59,9 @@ def load_config() -> AppConfig:
     allow_create_all = os.getenv("ALLOW_CREATE_ALL", "true").strip().lower() in {"1", "true", "yes"}
     rate_limit = int(os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "300"))
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    resend_api_key = os.getenv("RESEND_API_KEY")
+    resend_from_email = os.getenv("RESEND_FROM_EMAIL", "noreply@localhost").strip()
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
     config = AppConfig(
         app_env=app_env,
         database_url=database_url,
@@ -65,6 +71,9 @@ def load_config() -> AppConfig:
         allow_create_all=allow_create_all,
         rate_limit_requests_per_minute=rate_limit,
         log_level=log_level,
+        resend_api_key=resend_api_key,
+        resend_from_email=resend_from_email,
+        frontend_url=frontend_url,
     )
     validate_config(config)
     return config
@@ -87,6 +96,10 @@ def validate_config(config: AppConfig) -> None:
             raise ConfigError("CORS_ORIGINS cannot contain '*' in production.")
         if config.allow_create_all:
             raise ConfigError("ALLOW_CREATE_ALL must be false in production; run Alembic migrations instead.")
+        if not config.resend_api_key:
+            raise ConfigError("RESEND_API_KEY is required in production for account lifecycle email delivery.")
+        if not config.resend_from_email or config.resend_from_email == "noreply@localhost":
+            raise ConfigError("RESEND_FROM_EMAIL must be configured in production.")
 
 
 def default_cors_origins(config: AppConfig) -> list[str]:

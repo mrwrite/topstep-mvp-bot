@@ -12,6 +12,11 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    email_verified_at = Column(DateTime, nullable=True)
+    display_name = Column(String, nullable=True)
+    timezone = Column(String, nullable=True)
+    preferred_contact_email = Column(String, nullable=True)
+    trading_experience_level = Column(String, nullable=True)
 
     active_integration_id = Column(
         Integer,
@@ -22,6 +27,79 @@ class User(Base):
     # User configurable trading rules
     buy_threshold = Column(Integer, default=30)
     sell_threshold = Column(Integer, default=70)
+
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    purpose = Column(String, nullable=False, default="email_verification")
+    sent_count = Column(Integer, nullable=False, default=1)
+    last_sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_email_verification_tokens_user_consumed", "user_id", "consumed_at"),
+    )
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_password_reset_tokens_user_consumed", "user_id", "consumed_at"),
+    )
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String, nullable=False, unique=True, index=True)
+    user_agent_summary = Column(String, nullable=True)
+    ip_hash = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    revocation_reason = Column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_user_sessions_user_revoked", "user_id", "revoked_at"),
+    )
+
+
+class AccountRecoveryRequest(Base):
+    __tablename__ = "account_recovery_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reference_id = Column(String, nullable=False, unique=True, index=True)
+    contact_email = Column(String, nullable=False, index=True)
+    category = Column(String, nullable=False, default="account_recovery")
+    status = Column(String, nullable=False, default="open", index=True)
+    sanitized_message = Column(Text, nullable=False)
+    request_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_account_recovery_requests_user_status", "user_id", "status"),
+    )
 
 
 class PlatformIntegration(Base):
@@ -448,6 +526,11 @@ class UserPublic(BaseModel):
     username: str
     email: str
     created_at: datetime
+    email_verified_at: Optional[datetime] = None
+    display_name: Optional[str] = None
+    timezone: Optional[str] = None
+    preferred_contact_email: Optional[str] = None
+    trading_experience_level: Optional[str] = None
 
     class Config:
         from_attributes = True

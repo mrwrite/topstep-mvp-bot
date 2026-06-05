@@ -77,6 +77,9 @@ def test_production_config_requires_explicit_encryption_key_and_no_create_all():
         "allow_create_all": False,
         "rate_limit_requests_per_minute": 120,
         "log_level": "INFO",
+        "resend_api_key": "re_test",
+        "resend_from_email": "noreply@example.com",
+        "frontend_url": "https://demo.example.com",
     }
     with pytest.raises(ConfigError, match="CREDENTIALS_ENCRYPTION_KEY"):
         validate_config(AppConfig(**base))
