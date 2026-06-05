@@ -167,6 +167,26 @@ type LegalStatus = {
   }>;
 };
 
+type BetaStatus = {
+  ready: boolean;
+  beta_access_active: boolean;
+  live_trading_enabled: boolean;
+  blockers: Array<{
+    code: string;
+    detail: string;
+    status?: string;
+  }>;
+  beta_access: {
+    status: string;
+    active: boolean;
+    source?: string | null;
+    waitlist?: {
+      status: string;
+      email: string;
+    } | null;
+  };
+};
+
 type ReadinessItem = {
   label: string;
   ready: boolean;
@@ -252,6 +272,7 @@ function Dashboard() {
   const [launchGate, setLaunchGate] = useState<LaunchGate | null>(null);
   const [opsStatus, setOpsStatus] = useState<OperationalStatus | null>(null);
   const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
+  const [betaStatus, setBetaStatus] = useState<BetaStatus | null>(null);
   const [legalBusy, setLegalBusy] = useState(false);
   const [readinessError, setReadinessError] = useState('');
   const [demoBusy, setDemoBusy] = useState(false);
@@ -328,6 +349,11 @@ function Dashboard() {
   const refreshLegalStatus = async () => {
     const res = await api.get('/legal/documents');
     setLegalStatus(res.data);
+  };
+
+  const refreshBetaStatus = async () => {
+    const res = await api.get('/beta/status');
+    setBetaStatus(res.data);
   };
 
   const acceptRequiredLegalDocuments = async () => {
@@ -416,6 +442,10 @@ function Dashboard() {
     refreshLegalStatus().catch(err => {
       console.error('Failed to load legal status', err);
       setReadinessError('Legal acceptance status is unavailable. Paper beta access remains blocked.');
+    });
+    refreshBetaStatus().catch(err => {
+      console.error('Failed to load beta status', err);
+      setReadinessError('Beta access status is unavailable. Paper beta access remains blocked.');
     });
   }, [navigate]);
 
@@ -583,6 +613,16 @@ function Dashboard() {
       label: 'Market data',
       ready: !contractsError && !isFallbackContracts && providerHealth !== 'Unavailable',
       detail: contractsError || (isFallbackContracts ? 'Provider contract data is not validated.' : 'Provider contract lookup is available.'),
+      blocksPaper: true
+    },
+    {
+      label: 'Beta access',
+      ready: betaStatus?.beta_access_active === true,
+      detail:
+        betaStatus?.beta_access_active === true
+          ? `Invite-only beta access active via ${betaStatus.beta_access.source ?? 'approval'}.`
+          : betaStatus?.blockers.find(blocker => blocker.code === 'beta_access_required')?.detail ??
+            'Redeem an invite or wait for beta approval.',
       blocksPaper: true
     },
     {
@@ -921,6 +961,21 @@ function Dashboard() {
           )}
           {statusMessage && <div className="inline-alert" role="status" aria-live="polite">{statusMessage}</div>}
           {readinessError && <div className="inline-alert warning" role="alert">{readinessError}</div>}
+
+          <div className="legal-panel" aria-label="Invite-only beta access status">
+            <div className="panel-header compact-header">
+              <div>
+                <p className="eyebrow">Beta access</p>
+                <strong>{betaStatus?.beta_access.status ?? 'Unknown'}</strong>
+              </div>
+              <span className={betaStatus?.beta_access_active ? 'pill status success' : 'pill warning'}>
+                {betaStatus?.beta_access_active ? 'Approved' : 'Invite required'}
+              </span>
+            </div>
+            <p className="muted tiny">
+              Paper beta access is invite-only. Approval does not enable live trading or billing.
+            </p>
+          </div>
 
           <div className="legal-panel" aria-label="Legal acceptance status">
             <div className="panel-header compact-header">

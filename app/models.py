@@ -17,6 +17,7 @@ class User(Base):
     timezone = Column(String, nullable=True)
     preferred_contact_email = Column(String, nullable=True)
     trading_experience_level = Column(String, nullable=True)
+    is_admin = Column(Integer, nullable=False, default=0)
 
     active_integration_id = Column(
         Integer,
@@ -142,6 +143,89 @@ class LegalAcceptance(Base):
         Index("ux_legal_acceptances_user_document", "user_id", "legal_document_id", unique=True),
         Index("ix_legal_acceptances_user_type_version", "user_id", "document_type", "version"),
         Index("ix_legal_acceptances_user_accepted", "user_id", "accepted_at"),
+    )
+
+
+class BetaInviteCode(Base):
+    __tablename__ = "beta_invite_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code_hash = Column(String, nullable=False, unique=True, index=True)
+    status = Column(String, nullable=False, default="active", index=True)
+    max_uses = Column(Integer, nullable=False, default=1)
+    use_count = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    issued_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    email_restriction = Column(String, nullable=True, index=True)
+    campaign = Column(String, nullable=True)
+    source = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    invite_metadata = Column(JSON, nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_beta_invite_codes_status_expires", "status", "expires_at"),
+    )
+
+
+class BetaInviteRedemption(Base):
+    __tablename__ = "beta_invite_redemptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_code_id = Column(Integer, ForeignKey("beta_invite_codes.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email_at_redemption = Column(String, nullable=False, index=True)
+    redeemed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    redemption_metadata = Column(JSON, nullable=True)
+
+    __table_args__ = (
+        Index("ux_beta_invite_redemptions_user_invite", "user_id", "invite_code_id", unique=True),
+        Index("ix_beta_invite_redemptions_invite_user", "invite_code_id", "user_id"),
+    )
+
+
+class UserBetaStatus(Base):
+    __tablename__ = "user_beta_statuses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    status = Column(String, nullable=False, default="active", index=True)
+    source = Column(String, nullable=False, default="invite")
+    invite_redemption_id = Column(Integer, ForeignKey("beta_invite_redemptions.id", ondelete="SET NULL"), nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reason = Column(Text, nullable=True)
+    status_metadata = Column(JSON, nullable=True)
+    activated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    suspended_at = Column(DateTime, nullable=True)
+    exited_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_user_beta_statuses_status_source", "status", "source"),
+    )
+
+
+class BetaWaitlistEntry(Base):
+    __tablename__ = "beta_waitlist_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    name = Column(String, nullable=True)
+    use_case = Column(Text, nullable=True)
+    source = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    waitlist_metadata = Column(JSON, nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_beta_waitlist_entries_status_created", "status", "created_at"),
     )
 
 

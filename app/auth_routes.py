@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import hashlib
 import secrets
 from uuid import uuid4
-from . import models, database, legal_service
+from . import models, database, beta_access_service
 from .email_service import email_service
 from .observability import redact
 from .security import hash_password, verify_password
@@ -279,16 +279,7 @@ def beta_readiness(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    verified = current_user.email_verified_at is not None
-    legal_status = legal_service.acceptance_status(db, current_user)
-    blockers = [] if verified else [{"code": "email_verification_required", "detail": "Verify your email before beta access."}]
-    blockers.extend(legal_status["blockers"])
-    return {
-        "email_verified": verified,
-        "legal_acceptance_complete": legal_status["all_required_accepted"],
-        "blockers": blockers,
-        "live_trading_enabled": False,
-    }
+    return beta_access_service.combined_beta_readiness(db, current_user)
 
 
 @router.post("/verify-email")

@@ -79,6 +79,7 @@ def test_verify_email_consumes_token_and_beta_readiness_clears_blocker(monkeypat
         "terms_acceptance_required",
         "privacy_acceptance_required",
         "paper_disclosure_required",
+        "beta_access_required",
     }
 
     reused = client.post("/auth/verify-email", json={"token": raw_token})

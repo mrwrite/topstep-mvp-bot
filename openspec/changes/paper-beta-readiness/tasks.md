@@ -46,23 +46,23 @@
 
 ## Phase 3: Invite-Only Beta Access
 
-- [ ] 3.1 [P0] Add beta invite code model and redemption flow.
+- [x] 3.1 [P0] Add beta invite code model and redemption flow.
   - Why it matters for beta readiness: invite-only beta needs enforceable access control, not obscured URLs or UI-only gating.
   - Acceptance criteria: invite codes support expiry, max uses, status, issuer, optional email restriction, campaign/source, notes, and redemption records; valid redemption grants beta status.
   - Tests required: valid redemption, expired invite, disabled invite, exhausted invite, email mismatch, duplicate redemption idempotency.
-- [ ] 3.2 [P0] Enforce beta access gate on beta product routes.
+- [x] 3.2 [P0] Enforce beta access gate on beta product routes.
   - Why it matters for beta readiness: non-invited users must not access paper beta dashboards, setup, or trading workflows.
   - Acceptance criteria: users without active beta status receive `beta_access_required`; active beta users can continue through other gates; suspended beta users are blocked.
   - Tests required: unauthenticated route, authenticated no-beta user, active beta user, suspended beta user, live blocked for active beta.
-- [ ] 3.3 [P1] Add waitlist support.
+- [x] 3.3 [P1] Add waitlist support.
   - Why it matters for beta readiness: non-invited users need a controlled path to request access without creating support noise.
   - Acceptance criteria: waitlist captures email, optional name/use case/source, deduplicates entries, tracks status, and avoids revealing private invite state.
   - Tests required: join waitlist, duplicate waitlist update, invalid email, status query privacy, admin waitlist list.
-- [ ] 3.4 [P1] Add admin invite and waitlist management.
+- [x] 3.4 [P1] Add admin invite and waitlist management.
   - Why it matters for beta readiness: operators need to issue invites, pause invites, approve waitlist users, and audit changes.
   - Acceptance criteria: admin-only APIs create/disable invites, inspect redemptions, approve waitlist entries, suspend beta access, and record actor/reason.
   - Tests required: admin create invite, non-admin rejected, disable invite, approve waitlist, suspend user, audit record.
-- [ ] 3.5 [P1] Add user beta status API and UI surface.
+- [x] 3.5 [P1] Add user beta status API and UI surface.
   - Why it matters for beta readiness: frontend and support need stable beta status states for onboarding and troubleshooting.
   - Acceptance criteria: authenticated users can see waitlist/invited/active/suspended/exited status and next required action; UI displays status clearly.
   - Tests required: beta status API states, cross-user isolation, UI status rendering, suspended state messaging.
