@@ -102,6 +102,49 @@ class AccountRecoveryRequest(Base):
     )
 
 
+class LegalDocument(Base):
+    __tablename__ = "legal_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_type = Column(String, nullable=False, index=True)
+    version = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    content_markdown = Column(Text, nullable=False)
+    content_url = Column(String, nullable=True)
+    required = Column(Integer, nullable=False, default=1)
+    active = Column(Integer, nullable=False, default=1, index=True)
+    effective_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    document_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ux_legal_documents_type_version", "document_type", "version", unique=True),
+        Index("ix_legal_documents_required_active", "required", "active"),
+    )
+
+
+class LegalAcceptance(Base):
+    __tablename__ = "legal_acceptances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    legal_document_id = Column(Integer, ForeignKey("legal_documents.id", ondelete="RESTRICT"), nullable=False, index=True)
+    document_type = Column(String, nullable=False, index=True)
+    version = Column(String, nullable=False, index=True)
+    accepted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    ip_hash = Column(String, nullable=True)
+    user_agent_summary = Column(String, nullable=True)
+    acceptance_metadata = Column(JSON, nullable=True)
+    invalidated_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ux_legal_acceptances_user_document", "user_id", "legal_document_id", unique=True),
+        Index("ix_legal_acceptances_user_type_version", "user_id", "document_type", "version"),
+        Index("ix_legal_acceptances_user_accepted", "user_id", "accepted_at"),
+    )
+
+
 class PlatformIntegration(Base):
     __tablename__ = "platform_integrations"
 

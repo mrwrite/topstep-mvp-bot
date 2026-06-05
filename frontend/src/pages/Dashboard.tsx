@@ -147,6 +147,26 @@ type OperationalStatus = {
   }>;
 };
 
+type LegalStatus = {
+  all_required_accepted: boolean;
+  live_trading_enabled: boolean;
+  blockers: Array<{
+    code: string;
+    document_type: string;
+    version: string;
+    detail: string;
+  }>;
+  documents: Array<{
+    id: number;
+    document_type: string;
+    version: string;
+    title: string;
+    content_markdown: string;
+    accepted: boolean;
+    accepted_at?: string | null;
+  }>;
+};
+
 type ReadinessItem = {
   label: string;
   ready: boolean;
@@ -190,8 +210,13 @@ const unixFromLocal = (value: string) => Math.floor(new Date(value).getTime() / 
 
 const apiMessage = (err: unknown, fallback: string) => {
   if (err && typeof err === 'object' && 'response' in err) {
-    const response = (err as { response?: { data?: { detail?: string } } }).response;
-    return response?.data?.detail ?? fallback;
+    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
+    const detail = response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && 'message' in detail) {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === 'string') return message;
+    }
   }
   return fallback;
 };
@@ -226,6 +251,8 @@ function Dashboard() {
   const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([]);
   const [launchGate, setLaunchGate] = useState<LaunchGate | null>(null);
   const [opsStatus, setOpsStatus] = useState<OperationalStatus | null>(null);
+  const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
+  const [legalBusy, setLegalBusy] = useState(false);
   const [readinessError, setReadinessError] = useState('');
   const [demoBusy, setDemoBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -298,6 +325,30 @@ function Dashboard() {
     }
   };
 
+  const refreshLegalStatus = async () => {
+    const res = await api.get('/legal/documents');
+    setLegalStatus(res.data);
+  };
+
+  const acceptRequiredLegalDocuments = async () => {
+    setLegalBusy(true);
+    setStatusMessage('');
+    try {
+      const res = await api.post('/legal/acceptances', {
+        accept_terms_of_service: true,
+        accept_privacy_policy: true,
+        accept_paper_trading_disclosure: true,
+        metadata: { source: 'dashboard_legal_panel' }
+      });
+      setLegalStatus(res.data);
+      setStatusMessage('Required paper-beta documents accepted. Live trading remains disabled.');
+    } catch (err) {
+      setStatusMessage(apiMessage(err, 'Unable to record legal acceptance.'));
+    } finally {
+      setLegalBusy(false);
+    }
+  };
+
   const refreshReadinessState = async () => {
     setReadinessError('');
     const scope =
@@ -362,6 +413,10 @@ function Dashboard() {
 
     refreshTradingState();
     refreshDemoStatus();
+    refreshLegalStatus().catch(err => {
+      console.error('Failed to load legal status', err);
+      setReadinessError('Legal acceptance status is unavailable. Paper beta access remains blocked.');
+    });
   }, [navigate]);
 
   useEffect(() => {
@@ -528,6 +583,15 @@ function Dashboard() {
       label: 'Market data',
       ready: !contractsError && !isFallbackContracts && providerHealth !== 'Unavailable',
       detail: contractsError || (isFallbackContracts ? 'Provider contract data is not validated.' : 'Provider contract lookup is available.'),
+      blocksPaper: true
+    },
+    {
+      label: 'Legal documents',
+      ready: legalStatus?.all_required_accepted === true,
+      detail:
+        legalStatus?.all_required_accepted === true
+          ? 'Terms, privacy, and paper-risk disclosure are current.'
+          : legalStatus?.blockers?.[0]?.detail ?? 'Accept current beta legal documents before paper sessions.',
       blocksPaper: true
     },
     {
@@ -857,6 +921,40 @@ function Dashboard() {
           )}
           {statusMessage && <div className="inline-alert" role="status" aria-live="polite">{statusMessage}</div>}
           {readinessError && <div className="inline-alert warning" role="alert">{readinessError}</div>}
+
+          <div className="legal-panel" aria-label="Legal acceptance status">
+            <div className="panel-header compact-header">
+              <div>
+                <p className="eyebrow">Beta legal</p>
+                <strong>{legalStatus?.all_required_accepted ? 'Accepted' : 'Required'}</strong>
+              </div>
+              <span className={legalStatus?.all_required_accepted ? 'pill status success' : 'pill warning'}>
+                {legalStatus?.all_required_accepted ? 'Current' : 'Action needed'}
+              </span>
+            </div>
+            <p className="muted tiny">
+              Terms, privacy, and paper-trading risk disclosure are required before paper beta workflows.
+              Live trading remains disabled.
+            </p>
+            <div className="simple-list compact-list">
+              {(legalStatus?.documents ?? []).map(document => (
+                <div className="list-row" key={`${document.document_type}:${document.version}`}>
+                  <span>{document.title}</span>
+                  <strong>{document.accepted ? 'Accepted' : document.version}</strong>
+                </div>
+              ))}
+            </div>
+            {!legalStatus?.all_required_accepted && (
+              <button
+                type="button"
+                className="primary"
+                onClick={acceptRequiredLegalDocuments}
+                disabled={legalBusy || !legalStatus}
+              >
+                {legalBusy ? 'Recording...' : 'Accept required documents'}
+              </button>
+            )}
+          </div>
 
           <div className="demo-panel">
             <div>

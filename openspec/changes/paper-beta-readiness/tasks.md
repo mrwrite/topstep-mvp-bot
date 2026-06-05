@@ -23,23 +23,23 @@
 
 ## Phase 2: Legal Acceptance and Disclosure Tracking
 
-- [ ] 2.1 [P0] Add versioned legal document records for terms, privacy, and paper-risk disclosure.
+- [x] 2.1 [P0] Add versioned legal document records for terms, privacy, and paper-risk disclosure.
   - Why it matters for beta readiness: beta access must be tied to known document versions, not static copy without auditability.
   - Acceptance criteria: current required legal document versions are stored and retrievable; document metadata includes type, version, effective date, required flag, and content URL or markdown reference.
   - Tests required: migration/model tests, current document query, required document filtering, inactive old version handling.
-- [ ] 2.2 [P0] Add user legal acceptance records.
+- [x] 2.2 [P0] Add user legal acceptance records.
   - Why it matters for beta readiness: the product must prove each beta user accepted required policies before paper trading.
   - Acceptance criteria: acceptance records include user id, document type/version, accepted timestamp, IP hash, user-agent summary, and metadata; records are immutable except invalidation metadata.
   - Tests required: accept required docs, duplicate acceptance idempotency, user acceptance history scoped to user, metadata redaction.
-- [ ] 2.3 [P0] Gate beta product access on current legal acceptance.
+- [x] 2.3 [P0] Gate beta product access on current legal acceptance.
   - Why it matters for beta readiness: users must accept terms, privacy, and paper-risk disclosure before using beta workflows.
   - Acceptance criteria: beta dashboard and paper-session start return stable blockers for missing terms, privacy, or paper disclosure; accepted current versions remove blockers.
   - Tests required: missing terms gate, missing privacy gate, missing disclosure gate, accepted versions pass, live trading still blocked.
-- [ ] 2.4 [P1] Add re-acceptance workflow for document version changes.
+- [x] 2.4 [P1] Add re-acceptance workflow for document version changes.
   - Why it matters for beta readiness: policy changes during beta must prompt explicit user re-acceptance.
   - Acceptance criteria: when a newer required version is active, prior acceptances are insufficient; UI/API reports which document requires re-acceptance.
   - Tests required: old version accepted then new version required, blocker code returned, re-acceptance clears blocker, history retains both versions.
-- [ ] 2.5 [P1] Add legal acceptance UI and audit visibility.
+- [x] 2.5 [P1] Add legal acceptance UI and audit visibility.
   - Why it matters for beta readiness: users need clear disclosures and support needs a way to inspect acceptance state.
   - Acceptance criteria: frontend shows required documents, explicit confirmations, no-profit/paper-only disclosure, acceptance timestamps, and current/missing status.
   - Tests required: frontend acceptance flow, keyboard navigation, missing acceptance state, accepted state, responsive/mobile smoke test.

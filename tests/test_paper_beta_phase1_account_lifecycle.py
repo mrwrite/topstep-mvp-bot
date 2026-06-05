@@ -74,7 +74,12 @@ def test_verify_email_consumes_token_and_beta_readiness_clears_blocker(monkeypat
 
     ready = client.get("/auth/beta-readiness", headers=auth_headers(token))
     assert ready.json()["email_verified"] is True
-    assert ready.json()["blockers"] == []
+    assert ready.json()["legal_acceptance_complete"] is False
+    assert {blocker["code"] for blocker in ready.json()["blockers"]} == {
+        "terms_acceptance_required",
+        "privacy_acceptance_required",
+        "paper_disclosure_required",
+    }
 
     reused = client.post("/auth/verify-email", json={"token": raw_token})
     assert reused.status_code == 400

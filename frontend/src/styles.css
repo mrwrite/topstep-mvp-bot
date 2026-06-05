@@ -216,6 +216,10 @@ a {
   margin-bottom: 1rem;
 }
 
+.panel-header.compact-header {
+  margin-bottom: 0.6rem;
+}
+
 .control-group,
 .control-inline {
   display: flex;
@@ -653,6 +657,21 @@ button:disabled {
   border-radius: 12px;
   background: var(--accent-soft);
   margin: 0.75rem 0 1rem;
+}
+
+.legal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  margin: 0.75rem 0 1rem;
+}
+
+.legal-panel .primary {
+  width: 100%;
 }
 
 .auth-shell {
