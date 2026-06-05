@@ -3,7 +3,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from . import models
+from . import analytics_service, models
 from .observability import redact
 
 LEGAL_DOCUMENT_TERMS = "terms_of_service"
@@ -210,4 +210,11 @@ def accept_required_documents(
             )
         )
     db.flush()
+    analytics_service.capture_event(
+        db,
+        event_name="legal_acceptance_completed",
+        user_id=user.id,
+        metadata={"document_types": [document.document_type for document in documents]},
+        source="legal",
+    )
     return acceptance_status(db, user)

@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from . import legal_service, models
+from . import analytics_service, legal_service, models
 from .observability import redact
 
 BETA_STATUS_ACTIVE = "active"
@@ -216,6 +216,13 @@ def redeem_invite(
     db.add(redemption)
     db.flush()
     ensure_active_beta_status(db, user_id=user.id, source="invite", redemption_id=redemption.id)
+    analytics_service.capture_event(
+        db,
+        event_name="invite_redeemed",
+        user_id=user.id,
+        metadata={"campaign": invite.campaign, "source": invite.source},
+        source="beta_access",
+    )
     db.flush()
     return {"status": "redeemed", "beta_access": beta_status_payload(db, user)}
 
@@ -290,4 +297,11 @@ def upsert_waitlist(
         waitlist_metadata=redact(metadata or {}),
     )
     db.add(entry)
+    analytics_service.capture_event(
+        db,
+        event_name="waitlist_joined",
+        user_id=user_id,
+        metadata={"source": source},
+        source="beta_access",
+    )
     return entry

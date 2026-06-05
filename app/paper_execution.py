@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app import models
+from app import analytics_service, models
 from app.observability import log_event
 from app.risk_service import risk_service
 from app.trading_safety import PAPER_MODE, OrderIntent
@@ -626,6 +626,13 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
             message=str(exc.detail),
             metadata={"readiness_blocker": exc.headers.get("X-Readiness-Blocker") if exc.headers else None},
         )
+        analytics_service.capture_event(
+            db,
+            event_name="paper_order_blocked",
+            user_id=intent.user_id,
+            metadata={"symbol": intent.symbol, "source": intent.source, "reason": str(exc.detail)},
+            source="paper_execution",
+        )
         db.commit()
         raise
     now = datetime.utcnow()
@@ -660,6 +667,13 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
         status_value=ORDER_STATUS_CREATED,
         message="Paper order created after persisted risk checks.",
         metadata={"risk_decision_id": risk_decision.id},
+    )
+    analytics_service.capture_event(
+        db,
+        event_name="paper_order_created",
+        user_id=intent.user_id,
+        metadata={"symbol": intent.symbol, "source": intent.source, "order_type": intent.order_type},
+        source="paper_execution",
     )
     _transition_order(
         db,
@@ -751,6 +765,14 @@ def execute_paper_order(db: Session, intent: OrderIntent) -> dict[str, Any]:
         source=intent.source,
         live=False,
     )
+    analytics_service.capture_event(
+        db,
+        event_name="paper_order_filled",
+        user_id=intent.user_id,
+        metadata={"symbol": intent.symbol, "source": intent.source, "order_type": intent.order_type},
+        source="paper_execution",
+    )
+    db.commit()
     return _serialize_order(db, order)
 
 

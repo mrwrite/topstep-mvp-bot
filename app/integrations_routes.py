@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from . import database, models
+from . import analytics_service, database, models
 from .auth_routes import get_current_user_model
 from .crypto import encrypt_credentials
 from .integrations_service import set_active_integration
@@ -80,6 +80,14 @@ def create_integration(
         credentials_encrypted=encrypted,
     )
     db.add(integration)
+    db.flush()
+    analytics_service.capture_event(
+        db,
+        event_name="integration_created",
+        user_id=current_user.id,
+        metadata={"provider": integration.provider, "status": integration.status},
+        source="integrations",
+    )
     db.commit()
     db.refresh(integration)
     return _to_public(integration)
@@ -177,6 +185,14 @@ def activate_integration(
         integration_id=integration.id,
         provider=integration.provider,
     )
+    analytics_service.capture_event(
+        db,
+        event_name="integration_activated",
+        user_id=current_user.id,
+        metadata={"provider": integration.provider},
+        source="integrations",
+    )
+    db.commit()
     return {"active": _to_public(integration)}
 
 

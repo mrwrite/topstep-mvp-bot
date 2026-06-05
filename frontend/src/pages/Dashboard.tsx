@@ -187,6 +187,29 @@ type BetaStatus = {
   };
 };
 
+type OnboardingStatus = {
+  required_complete: boolean;
+  live_trading_enabled: boolean;
+  checklist: Array<{
+    code: string;
+    label: string;
+    complete: boolean;
+    required: boolean;
+    detail: string;
+  }>;
+  guidance: {
+    integration_walkthrough: string[];
+    paper_trading_setup: string[];
+    strategy_setup: string[];
+  };
+};
+
+type HelpTopic = {
+  slug: string;
+  title: string;
+  summary: string;
+};
+
 type ReadinessItem = {
   label: string;
   ready: boolean;
@@ -273,7 +296,16 @@ function Dashboard() {
   const [opsStatus, setOpsStatus] = useState<OperationalStatus | null>(null);
   const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
   const [betaStatus, setBetaStatus] = useState<BetaStatus | null>(null);
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
+  const [helpTopics, setHelpTopics] = useState<HelpTopic[]>([]);
   const [legalBusy, setLegalBusy] = useState(false);
+  const [supportBusy, setSupportBusy] = useState(false);
+  const [supportForm, setSupportForm] = useState({
+    category: 'paper_session',
+    severity: 'normal',
+    subject: '',
+    message: ''
+  });
   const [readinessError, setReadinessError] = useState('');
   const [demoBusy, setDemoBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -354,6 +386,48 @@ function Dashboard() {
   const refreshBetaStatus = async () => {
     const res = await api.get('/beta/status');
     setBetaStatus(res.data);
+  };
+
+  const refreshOnboardingStatus = async () => {
+    const res = await api.get('/onboarding/status');
+    setOnboardingStatus(res.data);
+  };
+
+  const refreshHelpTopics = async () => {
+    const res = await api.get('/onboarding/help');
+    setHelpTopics(res.data?.topics ?? []);
+  };
+
+  const completeOnboardingMilestone = async (code: string) => {
+    try {
+      const res = await api.post('/onboarding/milestones', { code });
+      setOnboardingStatus(res.data);
+      setStatusMessage('Onboarding step updated. Live trading remains disabled.');
+    } catch (err) {
+      setStatusMessage(apiMessage(err, 'Unable to update onboarding step.'));
+    }
+  };
+
+  const submitSupportRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSupportBusy(true);
+    try {
+      const res = await api.post('/onboarding/support', {
+        ...supportForm,
+        integration_id: activeIntegration?.id,
+        diagnostics: {
+          selected_symbol: selectedSymbol,
+          selected_account_id: selectedAccountId,
+          paper_only: true
+        }
+      });
+      setStatusMessage(`Support request ${res.data.reference_id} received.`);
+      setSupportForm({ category: 'paper_session', severity: 'normal', subject: '', message: '' });
+    } catch (err) {
+      setStatusMessage(apiMessage(err, 'Unable to submit support request.'));
+    } finally {
+      setSupportBusy(false);
+    }
   };
 
   const acceptRequiredLegalDocuments = async () => {
@@ -447,6 +521,11 @@ function Dashboard() {
       console.error('Failed to load beta status', err);
       setReadinessError('Beta access status is unavailable. Paper beta access remains blocked.');
     });
+    refreshOnboardingStatus().catch(err => {
+      console.error('Failed to load onboarding status', err);
+      setReadinessError('Onboarding status is unavailable. Paper beta access remains blocked.');
+    });
+    refreshHelpTopics().catch(err => console.error('Failed to load help topics', err));
   }, [navigate]);
 
   useEffect(() => {
@@ -1068,6 +1147,122 @@ function Dashboard() {
               </div>
             ))}
           </div>
+
+          <div className="onboarding-panel" aria-label="Paper beta onboarding checklist">
+            <div className="panel-header compact-header">
+              <div>
+                <p className="eyebrow">Onboarding</p>
+                <strong>{onboardingStatus?.required_complete ? 'Required steps complete' : 'Next steps'}</strong>
+              </div>
+              <span className={onboardingStatus?.required_complete ? 'pill status success' : 'pill warning'}>
+                {onboardingStatus?.checklist.filter(item => item.complete).length ?? 0}/
+                {onboardingStatus?.checklist.length ?? 0}
+              </span>
+            </div>
+            <div className="readiness-list" aria-label="Paper beta onboarding steps">
+              {(onboardingStatus?.checklist ?? []).map(item => (
+                <div className="readiness-item" key={item.code}>
+                  <span className={item.complete ? 'check good' : 'check blocked'}>
+                    {item.complete ? 'OK' : item.required ? 'Req' : 'Todo'}
+                  </span>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <p className="tiny muted">{item.detail}</p>
+                    {!item.complete &&
+                      ['paper_only_reviewed', 'integration_walkthrough_viewed', 'risk_controls_reviewed', 'strategy_setup_reviewed'].includes(item.code) && (
+                        <button
+                          type="button"
+                          className="ghost compact"
+                          onClick={() => completeOnboardingMilestone(item.code)}
+                        >
+                          Mark reviewed
+                        </button>
+                      )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mini-card">
+              <p className="eyebrow">Setup guide</p>
+              <ul className="pattern-list">
+                {(onboardingStatus?.guidance.integration_walkthrough ?? []).slice(0, 3).map(step => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="support-panel" aria-label="Beta support contact">
+            <div className="panel-header compact-header">
+              <div>
+                <p className="eyebrow">Support</p>
+                <strong>Contact beta support</strong>
+              </div>
+            </div>
+            <form className="integration-form" onSubmit={submitSupportRequest}>
+              <label htmlFor="support-category">Category</label>
+              <select
+                id="support-category"
+                value={supportForm.category}
+                onChange={e => setSupportForm({ ...supportForm, category: e.target.value })}
+              >
+                <option value="paper_session">Paper session</option>
+                <option value="integration">Integration</option>
+                <option value="risk_controls">Risk controls</option>
+                <option value="account_access">Account access</option>
+              </select>
+              <label htmlFor="support-severity">Severity</label>
+              <select
+                id="support-severity"
+                value={supportForm.severity}
+                onChange={e => setSupportForm({ ...supportForm, severity: e.target.value })}
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+              <label htmlFor="support-subject">Subject</label>
+              <input
+                id="support-subject"
+                value={supportForm.subject}
+                onChange={e => setSupportForm({ ...supportForm, subject: e.target.value })}
+                placeholder="Brief summary"
+                required
+              />
+              <label htmlFor="support-message">Message</label>
+              <textarea
+                id="support-message"
+                value={supportForm.message}
+                onChange={e => setSupportForm({ ...supportForm, message: e.target.value })}
+                placeholder="Describe what happened. Do not include credentials or secrets."
+                required
+              />
+              <button type="submit" className="primary" disabled={supportBusy}>
+                {supportBusy ? 'Sending...' : 'Send support request'}
+              </button>
+            </form>
+          </div>
+
+          {helpTopics.length > 0 && (
+            <div className="help-panel" aria-label="Beta help topics">
+              <div className="panel-header compact-header">
+                <div>
+                  <p className="eyebrow">Help</p>
+                  <strong>Paper beta basics</strong>
+                </div>
+              </div>
+              <div className="simple-list compact-list">
+                {helpTopics.slice(0, 4).map(topic => (
+                  <div className="list-row" key={topic.slug}>
+                    <span>{topic.title}</span>
+                    <strong>Read</strong>
+                    <p className="tiny muted">{topic.summary}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="button-row">
             <button

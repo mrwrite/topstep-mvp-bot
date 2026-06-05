@@ -69,46 +69,46 @@
 
 ## Phase 4: Onboarding and Support UX
 
-- [ ] 4.1 [P0] Add first-login onboarding flow.
+- [x] 4.1 [P0] Add first-login onboarding flow.
   - Why it matters for beta readiness: invited users need a safe path through account verification, disclosures, beta access, and paper-only setup.
   - Acceptance criteria: first-login flow orders steps by prerequisites and blocks dashboard access until P0 steps are complete; live-disabled messaging is persistent.
   - Tests required: new user onboarding route, completed user bypass, missing verification step, missing legal step, missing beta step, mobile smoke test.
-- [ ] 4.2 [P1] Add persisted onboarding checklist state.
+- [x] 4.2 [P1] Add persisted onboarding checklist state.
   - Why it matters for beta readiness: activation and support require knowing where users stall.
   - Acceptance criteria: checklist tracks email verification, legal acceptance, beta status, integration creation, account/contract selection, risk review, demo loaded, and first paper session.
   - Tests required: milestone completion, idempotent updates, cross-user isolation, checklist reset/admin visibility, analytics event emission.
-- [ ] 4.3 [P1] Add broker-neutral integration setup walkthrough.
+- [x] 4.3 [P1] Add broker-neutral integration setup walkthrough.
   - Why it matters for beta readiness: beta users must understand selected provider capabilities and paper-only limits before setup.
   - Acceptance criteria: walkthrough explains provider capability status, credential safety, account selection, contract selection, and live-disabled status without provider expansion.
   - Tests required: walkthrough renders provider-neutral copy, roadmap provider warning, credential field accessibility, account/contract checklist state.
-- [ ] 4.4 [P1] Add support contact flow.
+- [x] 4.4 [P1] Add support contact flow.
   - Why it matters for beta readiness: beta support needs structured, sanitized issue reports tied to user context.
   - Acceptance criteria: support form records category, severity, message, optional order/session/integration ids, sanitized diagnostics, support reference id, and user notification state.
   - Tests required: create support request, validation, redaction, scoped history, admin list/update, frontend success/error states.
-- [ ] 4.5 [P2] Add FAQ/help center placeholders.
+- [x] 4.5 [P2] Add FAQ/help center placeholders.
   - Why it matters for beta readiness: common questions should be answered consistently before invites are sent.
   - Acceptance criteria: help pages cover paper-only status, account setup, integrations, risk controls, order states, strategy assumptions, support escalation, and no-profit guarantee.
   - Tests required: route smoke test, content presence test, responsive/accessibility smoke test, no live-available claims.
 
 ## Phase 5: Monitoring and Analytics
 
-- [ ] 5.1 [P1] Add Sentry integration plan and configuration contract.
+- [x] 5.1 [P1] Add Sentry integration plan and configuration contract.
   - Why it matters for beta readiness: beta incidents need actionable error visibility without making external services mandatory for local development.
   - Acceptance criteria: config supports disabled/local/demo/production modes, DSN validation, environment tags, release tags, user-safe identifiers, and redaction rules.
   - Tests required: config disabled mode, invalid DSN, redaction, captured error metadata shape, no secrets in payload.
-- [ ] 5.2 [P1] Add product analytics event contract.
+- [x] 5.2 [P1] Add product analytics event contract.
   - Why it matters for beta readiness: beta decisions need evidence on onboarding, activation, retention, and paper engagement.
   - Acceptance criteria: analytics events have stable names, schema version, timestamp, environment, user-safe id, and redacted metadata; events can be disabled by config.
   - Tests required: event creation, schema validation, disabled mode, redaction, unknown event rejection or quarantine.
-- [ ] 5.3 [P1] Add onboarding funnel metrics.
+- [x] 5.3 [P1] Add onboarding funnel metrics.
   - Why it matters for beta readiness: operators need to know where beta users fail before first paper session.
   - Acceptance criteria: metrics report registration, email verification, legal acceptance, invite activation, integration setup, account/contract selection, and first paper session conversion.
   - Tests required: fixture event funnel, date range filtering, admin authorization, empty state, privacy-safe aggregation.
-- [ ] 5.4 [P2] Add activation and retention metrics.
+- [x] 5.4 [P2] Add activation and retention metrics.
   - Why it matters for beta readiness: beta success depends on recurring paper-trading use, not only account creation.
   - Acceptance criteria: metrics identify activated users, returning users, weekly active paper users, and cohort retention without exposing individual trading details.
   - Tests required: activation calculation, retention calculation, date windows, admin-only access, low-volume privacy guard.
-- [ ] 5.5 [P2] Add paper-trading engagement metrics.
+- [x] 5.5 [P2] Add paper-trading engagement metrics.
   - Why it matters for beta readiness: paper-session quality and safety signals should guide the next product phase.
   - Acceptance criteria: metrics include paper sessions, paper orders, blocked orders, kill switch activations, strategy signals, support requests, and top readiness blockers.
   - Tests required: engagement aggregation, blocked order count, kill switch count, support count, live trading unavailable assertion.

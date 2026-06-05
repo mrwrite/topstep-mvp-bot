@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import database, models
+from app import analytics_service, database, models
 from app.auth_routes import get_current_user_model
 from app.indicators import compute_indicators
 from app.providers.factory import get_adapter
@@ -216,6 +216,14 @@ def create_bot_session(
         trading_mode=state_for_user["trading_mode"],
         auto_trade=state_for_user["auto_trade"],
     )
+    analytics_service.capture_event(
+        db,
+        event_name="paper_session_started",
+        user_id=current_user.id,
+        metadata={"symbol": context.symbol, "auto_trade": state_for_user["auto_trade"]},
+        source="scheduler",
+    )
+    db.commit()
     return {
         "session_id": session_id,
         "trading_mode": state_for_user["trading_mode"],

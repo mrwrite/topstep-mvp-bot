@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import hashlib
 import secrets
 from uuid import uuid4
-from . import models, database, beta_access_service
+from . import analytics_service, models, database, beta_access_service
 from .email_service import email_service
 from .observability import redact
 from .security import hash_password, verify_password
@@ -189,6 +189,20 @@ def register(user: models.UserCreate, db: Session = Depends(database.get_db)):
     db.flush()
     verification_token = _create_email_verification(db, new_user)
     email_service.send_verification(to_email=new_user.email, token=verification_token)
+    analytics_service.capture_event(
+        db,
+        event_name="registration_completed",
+        user_id=new_user.id,
+        metadata={"email_verification_sent": True},
+        source="auth",
+    )
+    analytics_service.capture_event(
+        db,
+        event_name="email_verification_sent",
+        user_id=new_user.id,
+        metadata={"delivery_provider": "resend" if database.APP_CONFIG.resend_api_key else "local"},
+        source="auth",
+    )
     db.commit()
     db.refresh(new_user)
     return models.UserPublic.from_orm(new_user)
@@ -297,6 +311,13 @@ def verify_email(request: TokenRequest, db: Session = Depends(database.get_db)):
     now = datetime.utcnow()
     user.email_verified_at = now
     record.consumed_at = now
+    analytics_service.capture_event(
+        db,
+        event_name="email_verification_completed",
+        user_id=user.id,
+        metadata={"completed": True},
+        source="auth",
+    )
     db.commit()
     return {"status": "verified"}
 

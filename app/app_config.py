@@ -27,6 +27,13 @@ class AppConfig:
     resend_api_key: str | None
     resend_from_email: str
     frontend_url: str
+    sentry_dsn: str | None = None
+    sentry_enabled: bool = False
+    sentry_environment: str = "development"
+    sentry_release: str | None = None
+    analytics_enabled: bool = True
+    analytics_provider: str = "local"
+    analytics_retention_days: int = 365
 
     @property
     def is_production(self) -> bool:
@@ -62,6 +69,13 @@ def load_config() -> AppConfig:
     resend_api_key = os.getenv("RESEND_API_KEY")
     resend_from_email = os.getenv("RESEND_FROM_EMAIL", "noreply@localhost").strip()
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    sentry_enabled = os.getenv("SENTRY_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    sentry_environment = os.getenv("SENTRY_ENVIRONMENT", app_env).strip()
+    sentry_release = os.getenv("SENTRY_RELEASE")
+    analytics_enabled = os.getenv("ANALYTICS_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    analytics_provider = os.getenv("ANALYTICS_PROVIDER", "local").strip().lower()
+    analytics_retention_days = int(os.getenv("ANALYTICS_RETENTION_DAYS", "365"))
     config = AppConfig(
         app_env=app_env,
         database_url=database_url,
@@ -74,6 +88,13 @@ def load_config() -> AppConfig:
         resend_api_key=resend_api_key,
         resend_from_email=resend_from_email,
         frontend_url=frontend_url,
+        sentry_dsn=sentry_dsn,
+        sentry_enabled=sentry_enabled,
+        sentry_environment=sentry_environment,
+        sentry_release=sentry_release,
+        analytics_enabled=analytics_enabled,
+        analytics_provider=analytics_provider,
+        analytics_retention_days=analytics_retention_days,
     )
     validate_config(config)
     return config

@@ -7,7 +7,7 @@ import pandas as pd
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app import models
+from app import analytics_service, models
 from app.observability import log_event
 from app.strategy import STRATEGY_DESCRIPTION, STRATEGY_NAME, STRATEGY_VERSION, check_trade_signal
 from app.trading_safety import PAPER_MODE
@@ -86,6 +86,13 @@ def create_strategy_config(
         bot_session_id=bot_session_id,
     )
     db.add(config)
+    analytics_service.capture_event(
+        db,
+        event_name="strategy_config_created",
+        user_id=user_id,
+        metadata={"symbol": config.symbol, "trading_mode": trading_mode},
+        source="strategy",
+    )
     db.commit()
     db.refresh(config)
     return config
@@ -236,6 +243,13 @@ def record_strategy_signal(
         created_at=current,
     )
     db.add(signal_record)
+    analytics_service.capture_event(
+        db,
+        event_name="strategy_signal_created",
+        user_id=config.user_id,
+        metadata={"symbol": config.symbol, "signal": signal_value, "status": status_value},
+        source="strategy",
+    )
     db.commit()
     db.refresh(signal_record)
     log_event(

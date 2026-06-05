@@ -229,6 +229,63 @@ class BetaWaitlistEntry(Base):
     )
 
 
+class OnboardingProgress(Base):
+    __tablename__ = "onboarding_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    milestones = Column(JSON, nullable=False)
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reference_id = Column(String, nullable=False, unique=True, index=True)
+    category = Column(String, nullable=False, index=True)
+    severity = Column(String, nullable=False, default="normal", index=True)
+    status = Column(String, nullable=False, default="open", index=True)
+    subject = Column(String, nullable=False)
+    sanitized_message = Column(Text, nullable=False)
+    integration_id = Column(Integer, ForeignKey("platform_integrations.id", ondelete="SET NULL"), nullable=True)
+    paper_order_id = Column(Integer, ForeignKey("paper_orders.id", ondelete="SET NULL"), nullable=True)
+    bot_session_id = Column(String, nullable=True, index=True)
+    diagnostics = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_support_requests_user_created", "user_id", "created_at"),
+        Index("ix_support_requests_status_severity", "status", "severity"),
+    )
+
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_safe_id = Column(String, nullable=True, index=True)
+    event_name = Column(String, nullable=False, index=True)
+    event_category = Column(String, nullable=False, index=True)
+    schema_version = Column(String, nullable=False, default="beta-analytics-v1")
+    environment = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False, default="api", index=True)
+    provider = Column(String, nullable=False, default="local")
+    event_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_analytics_events_name_created", "event_name", "created_at"),
+        Index("ix_analytics_events_category_created", "event_category", "created_at"),
+        Index("ix_analytics_events_user_created", "user_id", "created_at"),
+    )
+
+
 class PlatformIntegration(Base):
     __tablename__ = "platform_integrations"
 

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from . import auth_routes, integrations_routes, models, database, scheduler, contracts, launch_gate_routes, reconciliation_routes, risk_routes, legal_routes, beta_access_routes
+from . import auth_routes, integrations_routes, models, database, scheduler, contracts, launch_gate_routes, reconciliation_routes, risk_routes, legal_routes, beta_access_routes, onboarding_routes, analytics_routes
 from . import analysis_routes
 from . import demo
 from . import health
@@ -32,6 +32,8 @@ app.include_router(reconciliation_routes.router, prefix="/reconciliation", tags=
 app.include_router(launch_gate_routes.router, prefix="/launch-gate", tags=["launch-gate"])
 app.include_router(legal_routes.router, prefix="/legal", tags=["legal"])
 app.include_router(beta_access_routes.router, prefix="/beta", tags=["beta-access"])
+app.include_router(onboarding_routes.router, prefix="/onboarding", tags=["onboarding-support"])
+app.include_router(analytics_routes.router, prefix="/analytics", tags=["beta-monitoring-analytics"])
 app.include_router(health.router, tags=["health"])
 app.include_router(demo.router)
 
