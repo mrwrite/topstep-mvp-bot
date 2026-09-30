@@ -5,6 +5,7 @@ COPY requirements.txt requirements.lock ./
 RUN pip install --no-cache-dir -r requirements.lock
 COPY app ./app
 COPY logger.py ./logger.py
+COPY config.py ./config.py
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 COPY scripts ./scripts
