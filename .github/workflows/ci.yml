@@ -8,6 +8,7 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17
@@ -43,11 +44,24 @@ jobs:
       - run: alembic heads
       - run: alembic history
       - run: alembic current
-      - run: pytest -q --basetemp=.pytest-tmp-ci
-      - run: pytest -q tests/test_simulation_beta_managed_secrets.py tests/test_tenant_repository.py tests/test_universal_tenant_enforcement.py tests/test_operator_audit_outcomes.py
-      - run: pytest -q tests/test_tenant_enforcement_postgres.py
-      - run: pytest -q tests/test_durable_simulation.py tests/test_durable_execution_failure_matrix.py tests/test_durable_execution_api.py tests/test_durable_simulation_evaluation.py
-      - run: pytest -q tests/test_durable_execution_postgres.py tests/test_durable_evaluation_postgres.py
+      # API-style tests rebuild their database between cases. Keep that database
+      # separate from the migrated PostgreSQL service used by the explicit
+      # concurrency tests so PostgreSQL DDL cannot wait on a retained test lock.
+      - run: pytest -vv --durations=20 --basetemp=.pytest-tmp-ci
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_simulation_beta_managed_secrets.py tests/test_tenant_repository.py tests/test_universal_tenant_enforcement.py tests/test_operator_audit_outcomes.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_tenant_enforcement_postgres.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_durable_simulation.py tests/test_durable_execution_failure_matrix.py tests/test_durable_execution_api.py tests/test_durable_simulation_evaluation.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_durable_execution_postgres.py tests/test_durable_evaluation_postgres.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
       - run: python scripts/durable_simulation_restart_drill.py --output-dir artifacts/durable-restart-drill
       - run: python scripts/deletion_restore_drill.py --output artifacts/deletion-restore-drill
       - run: python scripts/demo_smoke.py
