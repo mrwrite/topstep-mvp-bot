@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from '../router';
 import { useState } from 'react';
 import { api, API_BASE_URL } from '../api';
 
@@ -23,17 +23,10 @@ function Login() {
     body.append('grant_type', 'password');
 
     try {
-      const res = await api.post('/auth/token', body, {
+      await api.post('/auth/token', body, {
         baseURL: API_BASE_URL,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
-      const token = res.data?.access_token ?? res.data?.token;
-      if (!token) {
-        setError('Login failed: unexpected server response.');
-        setIsLoading(false);
-        return;
-      }
-      localStorage.setItem('token', token);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       console.error('Login failed', err);
@@ -48,11 +41,11 @@ function Login() {
       <div className="login-panel">
         <div className="login-header">
           <div>
-            <p className="eyebrow">TopStep MVP Bot</p>
+            <p className="eyebrow">Trading workspace</p>
             <h1>Sign in</h1>
-            <p className="muted">Connect to monitor the RSI bot and manage sessions.</p>
+            <p className="muted">Open the paper-trading dashboard and review broker setup.</p>
           </div>
-          <span className="pill status success">Secure</span>
+          <span className="pill warning">Live disabled</span>
         </div>
         {loggedOut && (
           <div className="inline-alert" role="status" aria-live="polite">
@@ -93,7 +86,7 @@ function Login() {
             disabled={isLoading}
           />
           <button type="submit" className="primary" disabled={isLoading}>
-            {isLoading ? 'Logging in…' : 'Login'}
+            {isLoading ? 'Logging in...' : 'Login'}
           </button>
         </form>
         <p className="tiny muted">API: {API_BASE_URL}</p>

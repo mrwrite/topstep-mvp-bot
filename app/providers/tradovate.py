@@ -6,11 +6,7 @@ from .types import IntegrationCapability, IntegrationProvider
 
 class TradovateAdapter(ProviderAdapter):
     provider = IntegrationProvider.TRADOVATE
-    capabilities = {
-        IntegrationCapability.BROKER_TRADING,
-        IntegrationCapability.MARKET_DATA,
-        IntegrationCapability.ACCOUNT_INFO,
-    }
+    capabilities: set[IntegrationCapability] = set()
 
     def validate_credentials(self) -> None:
         if not self.credentials:
@@ -19,7 +15,7 @@ class TradovateAdapter(ProviderAdapter):
     async def healthcheck(self) -> dict:
         if not self.credentials:
             return {"status": "not_configured", "message": "Tradovate credentials missing."}
-        return {"status": "ok"}
+        return {"status": "unavailable", "message": "Tradovate adapter is not implemented yet."}
 
     async def place_order(self, order: dict) -> dict:
         raise NotImplementedError("Tradovate trading adapter is not implemented yet.")

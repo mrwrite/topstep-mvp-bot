@@ -10,7 +10,8 @@ from app.models import PlatformIntegration, User
 from app.providers.types import (
     IntegrationCapability,
     IntegrationProvider,
-    PROVIDER_CAPABILITIES,
+    IMPLEMENTED_PROVIDER_CAPABILITIES,
+    provider_supports,
 )
 
 
@@ -39,10 +40,17 @@ def ensure_provider_compat(
     if required_provider and provider != required_provider:
         return False
     if required_capabilities:
-        provider_caps = PROVIDER_CAPABILITIES.get(provider, set())
-        if not set(required_capabilities).issubset(provider_caps):
+        if not provider_supports(provider, set(required_capabilities), implemented_only=True):
             return False
     return True
+
+
+def implemented_capabilities_for_provider(provider_value: str) -> set[IntegrationCapability]:
+    try:
+        provider = IntegrationProvider(provider_value)
+    except ValueError:
+        return set()
+    return IMPLEMENTED_PROVIDER_CAPABILITIES.get(provider, set())
 
 
 def resolve_integration(
@@ -79,23 +87,17 @@ def resolve_integration(
         ):
             return active
 
-    query = (
-        db.query(PlatformIntegration)
-        .filter(PlatformIntegration.user_id == user_id)
-        .filter(PlatformIntegration.status == "active")
-        .filter(PlatformIntegration.credentials_encrypted.isnot(None))
-        .order_by(PlatformIntegration.created_at.desc())
-    )
-    for candidate in query:
-        if ensure_provider_compat(candidate, required_provider, required_capabilities):
-            return candidate
     return None
 
 
 def decrypt_credentials(integration: PlatformIntegration) -> dict:
     if not integration.credentials_encrypted:
         return {}
-    return decrypt_blob(integration.credentials_encrypted)
+    return decrypt_blob(
+        integration.credentials_encrypted,
+        user_id=integration.user_id,
+        record_id=integration.id,
+    )
 
 
 def normalize_credentials(
@@ -139,6 +141,9 @@ def set_active_integration(
 
 
 def env_fallback_enabled() -> bool:
+    environment = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()
+    if environment not in {"development", "test", "demo"}:
+        return False
     return os.getenv("ALLOW_ENV_BROKER_FALLBACK", "false").lower() == "true"
 
 

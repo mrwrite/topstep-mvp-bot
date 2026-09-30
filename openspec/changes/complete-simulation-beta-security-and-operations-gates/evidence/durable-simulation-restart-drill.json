@@ -1,0 +1,45 @@
+{
+  "assertions": {
+    "crash_exit_is_controlled": true,
+    "duplicate_process_succeeded": true,
+    "killed_restart_process_succeeded": true,
+    "killed_run_has_no_effects": true,
+    "killed_run_remained_killed": true,
+    "lease_fence_advanced": true,
+    "no_duplicate_fills": true,
+    "no_duplicate_ledger_entries": true,
+    "no_duplicate_orders": true,
+    "recovery_process_succeeded": true,
+    "risk_count_matches_fills": true,
+    "run_returned_running": true,
+    "two_inputs_have_two_evaluations": true
+  },
+  "crash": {
+    "exit_code": 91
+  },
+  "kill_restart": {
+    "counts": {
+      "evaluations": 0,
+      "fills": 0,
+      "ledger_entries": 0,
+      "orders": 0,
+      "risk_trade_count": 0
+    },
+    "process_exit": 0,
+    "remained_killed": true,
+    "state": "killed"
+  },
+  "lease_takeover": {
+    "fence_advanced": true,
+    "first_fence": 1,
+    "recovered_fence": 2
+  },
+  "recovered_counts": {
+    "evaluations": 2,
+    "fills": 2,
+    "ledger_entries": 2,
+    "orders": 2,
+    "risk_trade_count": 2
+  },
+  "result": "PASS"
+}

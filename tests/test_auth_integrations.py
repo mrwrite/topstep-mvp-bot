@@ -41,7 +41,7 @@ def login_user(username: str, password: str) -> str:
 
 
 def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token}", "X-Internal-Paper-Fixture": "true"}
 
 
 def test_register_user_and_reject_duplicates():

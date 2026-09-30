@@ -1,14 +1,14 @@
 import logging
 import os
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
-from app.integrations_service import env_fallback_enabled, env_topstepx_credentials, resolve_integration
 from app.providers.factory import get_adapter
-from app.providers.topstepx import TopStepXAdapter
 from app.providers.types import IntegrationCapability, IntegrationProvider
+from app.trading_safety import LIVE_MODE, normalize_mode
+from app.trading_context import TradingContextError, trading_context_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -24,33 +24,49 @@ def _fallback_contracts():
 async def list_contracts(
     integration_id: int | None = None,
     provider: IntegrationProvider | None = None,
+    trading_mode: str = "paper",
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user_model),
 ):
     """Return a list of available contract symbols."""
-    integration = resolve_integration(
-        db,
-        current_user.id,
-        integration_id=integration_id,
-        required_provider=provider,
-        required_capabilities={IntegrationCapability.MARKET_DATA},
-    )
+    mode = normalize_mode(trading_mode)
+    try:
+        context = trading_context_service.resolve(
+            db,
+            user_id=current_user.id,
+            trading_mode=mode,
+            integration_id=integration_id,
+            required_provider=provider,
+            required_capabilities={IntegrationCapability.MARKET_DATA},
+            require_integration=mode == LIVE_MODE or integration_id is not None,
+            allow_paper_fallback=True,
+        )
+    except TradingContextError as exc:
+        if exc.code == "missing_provider_capability":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected integration does not provide implemented market data.",
+            ) from exc
+        raise
+    integration = context.integration
+
+    if integration_id is not None and not integration:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected integration does not provide implemented market data.",
+        )
 
     if not integration:
-        if env_fallback_enabled():
-            env_credentials = env_topstepx_credentials()
-            if env_credentials:
-                adapter = TopStepXAdapter(env_credentials, {})
-                try:
-                    contracts = await adapter.get_contracts()
-                    symbols = [c.get("name") for c in contracts if c.get("name")]
-                    return {"contracts": symbols or _fallback_contracts(), "source": "env"}
-                except Exception as exc:
-                    logger.warning("Env fallback contracts failed: %s", exc)
+        if mode == LIVE_MODE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Live mode requires contracts from a selected market data integration.",
+            )
         return {
             "contracts": _fallback_contracts(),
             "source": "fallback",
-            "message": "No active market data integration configured.",
+            "tradable_live": False,
+            "message": "Paper-mode fallback contracts are simulated and not live-tradable.",
         }
 
     adapter = get_adapter(integration)
@@ -58,10 +74,16 @@ async def list_contracts(
         contracts = await adapter.get_contracts()
     except Exception as exc:
         logger.warning("Failed to load contracts: %s", exc)
+        if mode == LIVE_MODE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Live mode requires provider contracts; market data integration unavailable.",
+            ) from exc
         return {
             "contracts": _fallback_contracts(),
             "source": "fallback",
-            "message": "Market data integration unavailable.",
+            "tradable_live": False,
+            "message": "Paper-mode fallback contracts are simulated and not live-tradable.",
         }
     symbols = [c.get("name") for c in contracts if c.get("name")]
-    return {"contracts": symbols, "source": integration.provider.lower()}
+    return {"contracts": symbols, "source": integration.provider.lower(), "tradable_live": False}

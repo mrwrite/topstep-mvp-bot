@@ -42,6 +42,7 @@ class BacktestSummary:
     losses: int
     signals: Dict[str, int]
     patterns: Dict[str, Any]
+    assumptions: List[str]
 
 
 class BacktestError(Exception):
@@ -104,12 +105,12 @@ def _fetch_topstep_ohlc(symbol: str, resolution: str, start: int, end: int) -> D
 
     response = requests.post(url, json=payload, headers=headers)
     if response.status_code != 200:
-        raise BacktestError(f"Topstep history fetch failed: {response.text}")
+        raise BacktestError(f"Topstep history fetch failed with status {response.status_code}.")
 
     data = response.json()
     bars = data.get("bars") or []
     if not data.get("success") or not bars:
-        raise BacktestError(f"Topstep history response invalid: {data}")
+        raise BacktestError("Topstep history response did not contain usable bars.")
 
     frame = pd.DataFrame(bars)
     frame["timestamp"] = pd.to_datetime(frame["t"])
@@ -226,6 +227,11 @@ def run_backtest(
         losses=losses,
         signals=signals_summary,
         patterns=pattern_summary,
+        assumptions=[
+            "Strategy: rsi-threshold-v1 only. Moving averages and momentum are not confirmation signals.",
+            "No slippage, commissions, margin, liquidity constraints, or exchange fees are modeled.",
+            "Backtest and paper results do not predict or guarantee live trading performance.",
+        ],
     )
 
 

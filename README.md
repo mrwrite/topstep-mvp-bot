@@ -37,8 +37,25 @@ TRADINGVIEW_API_KEY=your-tradingview-api-key
 TRADINGVIEW_BASE_URL=https://api.tradingview.com  # optional
 ```
 
-> `CREDENTIALS_ENCRYPTION_KEY` is optional. If omitted, the backend derives an encryption key
-> from `SECRET_KEY`. Use an explicit Fernet key for production.
+> `CREDENTIALS_ENCRYPTION_KEY` is optional only outside production. Production startup requires an explicit Fernet key and `ALLOW_CREATE_ALL=false`.
+> Run Alembic migrations before marking a hosted backend ready.
+
+Production deployment notes are in [docs/deployment-readiness.md](docs/deployment-readiness.md).
+Live-readiness incident procedures are in [docs/live-readiness-operational-runbook.md](docs/live-readiness-operational-runbook.md), and responsive/accessibility checks are in [docs/accessibility-responsive-checks.md](docs/accessibility-responsive-checks.md).
+
+## Investor demo
+
+This app is safe only for paper-trading demos. Live broker order execution is disabled.
+
+Demo workflow:
+
+1. Start the backend and frontend.
+2. Register or log in.
+3. Open the dashboard and select `Load demo`.
+4. Review seeded paper orders, paper positions, strategy metrics, provider status, and readiness blockers.
+5. Select `Reset` after the walkthrough.
+
+Additional demo guidance is in [docs/investor-demo-package.md](docs/investor-demo-package.md), with remaining blockers in [docs/launch-readiness-checklist.md](docs/launch-readiness-checklist.md). Terms and privacy placeholders live in [docs/terms-placeholder.md](docs/terms-placeholder.md) and [docs/privacy-placeholder.md](docs/privacy-placeholder.md).
 
 ## 🧭 New user onboarding & integrations
 

@@ -1,0 +1,11 @@
+{
+  "drill": "application-level deletion backup restore",
+  "timestamp": "2026-07-26T17:51:19.466510+00:00",
+  "passed": true,
+  "checks": {
+    "identity_anonymized": true,
+    "sessions_absent": true,
+    "credentials_absent": true
+  },
+  "limitation": "This does not verify managed infrastructure backup purge or retention."
+}

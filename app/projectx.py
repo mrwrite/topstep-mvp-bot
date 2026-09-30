@@ -1,141 +1,56 @@
-# projectx.py
-from app.auth import get_session_token
-import os
-import requests
-import json
+"""Legacy internal TopstepX helpers.
 
-USER_NAME = os.getenv("TOPSTEP_USER")
-API_KEY = os.getenv("TOPSTEP_API_KEY")
-_account_id_raw = os.getenv("TOPSTEP_ACCOUNT_ID")
-ACCOUNT_ID = int(_account_id_raw) if _account_id_raw else None
+These helpers are not available to hosted beta users. They deliberately avoid
+logging provider bodies, credentials, authorization headers, order payloads,
+or tokens.
+"""
+
+import requests
+
 BASE_URL = "https://api.topstepx.com"
 
-def get_active_account_id(token):
-    url = f"{BASE_URL}/api/Account/search"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    payload = {"onlyActiveAccounts": True}
 
+def _headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def get_active_account_id(token: str):
+    """Account selection is never inferred; the durable approval service owns it."""
+    return None
+
+
+def get_contract_id(symbol: str, token: str):
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        print("Status Code (Account Search):", response.status_code)
-        print("Response (Account Search):", response.text)
-
-        data = response.json()
-        if data.get("success") and data.get("accounts"):
-            account_id = data["accounts"][0]["id"]
-            print(f"✅ Found active account: ID {account_id}")
-            return account_id
-        else:
-            print("❌ No active accounts found.")
-            return None
-    except requests.exceptions.RequestException as e:
-        print("❌ Account search failed:", e)
-        return None
-
-def get_contract_id(symbol: str, token):
-    url = f"{BASE_URL}/api/Contract/search"
-    payload = {
-        "searchText": symbol.upper(),
-        "live": False
-    }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        print("Status Code (Contract Search):", response.status_code)
-        print("Response (Contract Search):", response.text)
+        response = requests.post(
+            f"{BASE_URL}/api/Contract/search",
+            headers=_headers(token),
+            json={"searchText": symbol.upper(), "live": False},
+            timeout=20,
+        )
         response.raise_for_status()
-        data = response.json()
-
-        contracts = data.get("contracts", [])
-        print("Contracts returned:", contracts)
+        contracts = response.json().get("contracts") or []
         for contract in contracts:
-            if symbol.upper() in (contract["name"], contract["description"]):
-                print(f"✅ Found contract: {symbol} -> ID: {contract['id']}")
-                return contract["id"]
-
-        print(f"❌ No matching contract found for symbol: {symbol}")
+            if symbol.upper() in (contract.get("name"), contract.get("description")):
+                return contract.get("id")
+    except (requests.RequestException, ValueError):
         return None
+    return None
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error fetching contract ID: {e}")
-        return None
-    
 
 def get_all_contracts(token: str):
-    """Retrieve all available contracts from Topstep."""
-    url = f"{BASE_URL}/api/Contract/search"
-    payload = {
-        "searchText": "",
-        "live": False,
-    }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        print("Status Code (Contract Search):", response.status_code)
-        print("Response (Contract Search):", response.text)
+        response = requests.post(
+            f"{BASE_URL}/api/Contract/search",
+            headers=_headers(token),
+            json={"searchText": "", "live": False},
+            timeout=20,
+        )
         response.raise_for_status()
-        data = response.json()
-        return data.get("contracts", [])
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error fetching contract list: {e}")
+        return response.json().get("contracts") or []
+    except (requests.RequestException, ValueError):
         return []
 
 
-def execute_trade(symbol: str, side: str, quantity: int, token: str):   
-
-    account_id = get_active_account_id(token)
-    if not account_id:
-        return {"error": "No active account available to place trade."}
-
-    contract_id = get_contract_id(symbol, token)
-    if not contract_id:
-        return {"error": f"Could not find contract for symbol: {symbol}"}
-
-    url = f"{BASE_URL}/api/Order/place"
-
-    payload = {
-        "accountId": account_id,
-        "contractId": contract_id,
-        "type": 2,  # MARKET
-        "side": 0 if side.upper() == "BUY" else 1,  # 0 = BUY, 1 = SELL
-        "size": quantity,
-        "timeInForce": "GTC"
-    }
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    try:
-        print("Final Payload:\n", json.dumps(payload, indent=2))
-        response = requests.post(url, headers=headers, json=payload)
-        print("Status Code:", response.status_code)
-        print("Response:", response.text)
-
-        if not response.ok:
-            try:
-                payload = response.json()
-            except ValueError:
-                payload = {"errorMessage": response.text}
-
-            return {
-                "success": False,
-                "status": response.status_code,
-                "errorMessage": payload.get("errorMessage") or payload,
-            }
-
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return {"success": False, "error": str(e)}
+def execute_trade(symbol: str, side: str, quantity: int, token: str):
+    """Fail closed until the durable provider-execution slice is implemented."""
+    return {"success": False, "errorMessage": "Provider order submission is disabled."}

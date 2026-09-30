@@ -1,0 +1,22 @@
+services:
+  api:
+    image: trading-bot-api@sha256:REPLACE_WITH_APPROVED_DIGEST
+    user: "10001:10001"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    devices:
+      - /dev/tpmrm0:/dev/tpmrm0
+    group_add:
+      - "REPLACE_WITH_HOST_TSS_GID"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=0700,size=16m
+      - /run/app:rw,noexec,nosuid,nodev,mode=0700,size=1m
+    volumes:
+      - ./public:/etc/trading-bot/keys:ro
+    environment:
+      APP_ENV: production
+      KEY_MANAGEMENT_PROVIDER: tpm2
+      TPM_DEVICE_PATH: /dev/tpmrm0
+      # Supply identifiers and public-only metadata from the deployment manager.
+      # Supply TPM_AUTH_FILE through a root-owned runtime credential mount, not this file.

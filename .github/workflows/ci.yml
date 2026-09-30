@@ -1,0 +1,93 @@
+name: beta-safety
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: tradebot
+          POSTGRES_PASSWORD: test-password
+          POSTGRES_DB: tradebot_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tradebot -d tradebot_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql://tradebot:test-password@localhost:5432/tradebot_test
+      DURABLE_POSTGRES_TEST_URL: postgresql://tradebot:test-password@localhost:5432/tradebot_test
+      DURABLE_RESTART_DRILL_DATABASE_URL: postgresql://tradebot:test-password@localhost:5432/tradebot_test
+      SECRET_KEY: ci-only-secret
+      CREDENTIALS_ENCRYPTION_KEY: 3gOL71plAkj_hzLfV5-29uUGFuwSi_iPf9f4HEI6-1A=
+      ALLOW_CREATE_ALL: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements-dev.lock
+      - run: python -m pip install pip-audit==2.9.0
+      - run: python -m pip check
+      - run: python -m pip_audit -r requirements.lock
+      - run: python -m compileall -q app scripts
+      - run: python scripts/check_key_management_architecture.py
+      - run: alembic upgrade head
+      - run: alembic heads
+      - run: alembic history
+      - run: alembic current
+      # API-style tests rebuild their database between cases. Keep that database
+      # separate from the migrated PostgreSQL service used by the explicit
+      # concurrency tests so PostgreSQL DDL cannot wait on a retained test lock.
+      - run: pytest -vv --durations=20 --basetemp=.pytest-tmp-ci
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_simulation_beta_managed_secrets.py tests/test_tenant_repository.py tests/test_universal_tenant_enforcement.py tests/test_operator_audit_outcomes.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_tenant_enforcement_postgres.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_durable_simulation.py tests/test_durable_execution_failure_matrix.py tests/test_durable_execution_api.py tests/test_durable_simulation_evaluation.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: pytest -vv tests/test_durable_execution_postgres.py tests/test_durable_evaluation_postgres.py
+        env:
+          DATABASE_URL: sqlite:///./test-ci.db
+      - run: python scripts/durable_simulation_restart_drill.py --output-dir artifacts/durable-restart-drill
+      - run: python scripts/deletion_restore_drill.py --output artifacts/deletion-restore-drill
+      - run: python scripts/demo_smoke.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-release-evidence
+          path: artifacts/
+          if-no-files-found: error
+
+  frontend-and-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend
+      - run: npm install --global @fission-ai/openspec@1.3.1
+      - run: openspec validate --all --strict
+      - run: git diff --check

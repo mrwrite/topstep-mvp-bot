@@ -20,18 +20,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column("users", sa.Column("active_integration_id", sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        "fk_users_active_integration_id",
-        "users",
-        "platform_integrations",
-        ["active_integration_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.add_column(sa.Column("active_integration_id", sa.Integer(), nullable=True))
+        batch_op.create_foreign_key(
+            "fk_users_active_integration_id",
+            "platform_integrations",
+            ["active_integration_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_constraint("fk_users_active_integration_id", "users", type_="foreignkey")
-    op.drop_column("users", "active_integration_id")
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.drop_constraint("fk_users_active_integration_id", type_="foreignkey")
+        batch_op.drop_column("active_integration_id")

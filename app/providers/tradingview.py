@@ -19,5 +19,5 @@ class TradingViewAdapter(ProviderAdapter):
     def validate_webhook_secret(self, incoming_secret: str | None) -> bool:
         expected = self.credentials.get("webhookSecret") or self.metadata.get("webhookSecret")
         if not expected:
-            return True
+            return False
         return bool(incoming_secret) and incoming_secret == expected
