@@ -685,6 +685,7 @@ button:disabled {
 
 .onboarding-panel,
 .support-panel,
+.subscription-panel,
 .help-panel {
   display: flex;
   flex-direction: column;

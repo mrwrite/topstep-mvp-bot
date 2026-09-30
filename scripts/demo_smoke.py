@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import os
+import sys
+import tempfile
 import uuid
+from pathlib import Path
 
 from cryptography.fernet import Fernet
-from fastapi.testclient import TestClient
 
 os.environ.setdefault("APP_ENV", "test")
-os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+smoke_db = Path(tempfile.gettempdir()) / f"tradebot-demo-smoke-{uuid.uuid4().hex}.db"
+os.environ["DATABASE_URL"] = f"sqlite:///{smoke_db.as_posix()}"
 os.environ.setdefault("SECRET_KEY", "demo-smoke-secret")
 os.environ.setdefault("CREDENTIALS_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+os.environ["ALLOW_CREATE_ALL"] = "true"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from fastapi.testclient import TestClient  # noqa: E402
 from app import database  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -39,32 +45,17 @@ def main() -> None:
     assert seeded.json()["paper_only"] is True
     assert seeded.json()["live_trading_enabled"] is False
 
-    integration = client.post(
-        "/integrations",
-        json={
-            "display_name": "Smoke Paper Broker",
-            "provider": "TOPSTEPX",
-            "metadata": {"environment": "demo", "account_id": "SMOKE-PAPER-001"},
-            "credentials": {
-                "userName": "smoke-paper-user",
-                "apiKey": "smoke-paper-key-not-live",
-                "baseUrl": "https://demo.invalid",
-            },
-        },
-        headers=headers,
-    )
-    assert integration.status_code == 201, integration.text
-    integration_id = integration.json()["id"]
-
-    activate = client.put(f"/integrations/{integration_id}/activate", headers=headers)
-    assert activate.status_code == 200, activate.text
+    active = client.get("/integrations/active", headers=headers)
+    assert active.status_code == 200 and active.json()["active"], active.text
+    integration_id = active.json()["active"]["id"]
+    account_id = seeded.json()["demo_account_id"]
 
     session = client.post(
         "/scheduler/bot-sessions",
         json={
             "symbol": "ES",
             "integration_id": integration_id,
-            "account_id": "SMOKE-PAPER-001",
+            "account_id": account_id,
             "trading_mode": "paper",
             "auto_trade": False,
         },
@@ -79,7 +70,7 @@ def main() -> None:
             "side": "BUY",
             "quantity": 1,
             "integration_id": integration_id,
-            "account_id": "SMOKE-PAPER-001",
+            "account_id": account_id,
             "trading_mode": "paper",
             "idempotency_key": f"smoke:{uuid.uuid4().hex}",
         },
@@ -106,7 +97,9 @@ def main() -> None:
     assert reset.status_code == 200, reset.text
     assert reset.json()["seeded"] is False
 
-    print("Demo smoke passed: paper-only seed/status/reset flow works and live trading is disabled.")
+    print("Demo smoke passed: isolated paper-only seed/status/reset flow works; live trading is disabled.")
+    database.engine.dispose()
+    smoke_db.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

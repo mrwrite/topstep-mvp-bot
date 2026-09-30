@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from '../router';
 import { useState } from 'react';
 import { api, API_BASE_URL } from '../api';
 
@@ -23,17 +23,10 @@ function Login() {
     body.append('grant_type', 'password');
 
     try {
-      const res = await api.post('/auth/token', body, {
+      await api.post('/auth/token', body, {
         baseURL: API_BASE_URL,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
-      const token = res.data?.access_token ?? res.data?.token;
-      if (!token) {
-        setError('Login failed: unexpected server response.');
-        setIsLoading(false);
-        return;
-      }
-      localStorage.setItem('token', token);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       console.error('Login failed', err);

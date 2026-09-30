@@ -93,7 +93,11 @@ def resolve_integration(
 def decrypt_credentials(integration: PlatformIntegration) -> dict:
     if not integration.credentials_encrypted:
         return {}
-    return decrypt_blob(integration.credentials_encrypted)
+    return decrypt_blob(
+        integration.credentials_encrypted,
+        user_id=integration.user_id,
+        record_id=integration.id,
+    )
 
 
 def normalize_credentials(

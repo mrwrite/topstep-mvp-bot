@@ -40,8 +40,10 @@ def login_user(username: str, password: str = "StrongPass1") -> str:
     return response.json()["access_token"]
 
 
-def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "user-agent": "pytest-browser beta-suite"}
+def auth_headers(token: str, target_user_id: int = 1) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "user-agent": "pytest-browser beta-suite",
+            "X-Operator-Reason": "Automated authorization verification",
+            "X-Operator-Case-ID": "TEST-BETA", "X-Operator-Target-User": str(target_user_id)}
 
 
 def mark_verified_and_admin(username: str, *, is_admin: bool = False):
@@ -181,7 +183,7 @@ def test_admin_invite_management_is_admin_only_and_can_suspend_access():
 
     suspended = client.post(
         f"/beta/admin/users/{alice_id}/suspend",
-        headers=auth_headers(admin),
+        headers=auth_headers(admin, alice_id),
         json={"reason": "policy review"},
     )
     assert suspended.status_code == 200

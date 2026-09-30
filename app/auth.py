@@ -1,49 +1,34 @@
-# auth.py
-import requests
+"""Legacy TopstepX authentication helper.
+
+Hosted beta code must not call this helper. It remains only for compatibility
+with internal paper-mode utilities and deliberately never logs provider
+requests, responses, credentials, or tokens.
+"""
+
 import os
+
+import requests
 from dotenv import load_dotenv
 from requests.exceptions import RequestException
-import json
 
 load_dotenv()
 
 LOGIN_URL = "https://api.topstepx.com/api/Auth/loginKey"
 
-def get_session_token():
-    user_name = os.getenv("TOPSTEP_USER")
-    api_key = os.getenv("TOPSTEP_API_KEY")
 
+def get_session_token() -> str:
     payload = {
-        "userName": user_name,
-        "apiKey": api_key
+        "userName": os.getenv("TOPSTEP_USER"),
+        "apiKey": os.getenv("TOPSTEP_API_KEY"),
     }
-
-    headers = {
-        "accept": "text/plain",
-        "Content-Type": "application/json"
-    }
-
+    headers = {"accept": "text/plain", "Content-Type": "application/json"}
     try:
-        response = requests.post(LOGIN_URL, headers=headers, json=payload)
-        print("Status Code:", response.status_code)
-        print("Response Text:", response.text)
-
-        # Raise if bad status code
+        response = requests.post(LOGIN_URL, headers=headers, json=payload, timeout=15)
         response.raise_for_status()
-
-        # Attempt to parse JSON
-        try:
-            data = response.json()
-        except json.JSONDecodeError:
-            raise Exception("❌ Failed to decode JSON from auth response")
-
-        # Check API response success
-        if data.get("success") and data.get("token"):
-            print("✅ Auth successful!")
-            print("Session Token:", data["token"])
-            return data["token"]
-        else:
-            raise Exception(f"❌ Auth failed: {data.get('errorMessage', 'Unknown error')}")
-
-    except RequestException as e:
-        raise Exception(f"❌ Request failed: {str(e)}")
+        data = response.json()
+    except (RequestException, ValueError) as exc:
+        raise RuntimeError("Authentication provider request failed.") from exc
+    token = data.get("token") if data.get("success") else None
+    if not token:
+        raise RuntimeError("Authentication provider rejected the request.")
+    return token

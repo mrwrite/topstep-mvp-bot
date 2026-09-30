@@ -1,9 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text, Index, Float
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Text, Index, Float, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, text
 from datetime import datetime
 from .database import Base
 from pydantic import BaseModel
 from typing import Any, Optional
 from .providers.types import IntegrationProvider
+from .time_utils import utc_now
 
 class User(Base):
     __tablename__ = "users"
@@ -18,6 +19,8 @@ class User(Base):
     preferred_contact_email = Column(String, nullable=True)
     trading_experience_level = Column(String, nullable=True)
     is_admin = Column(Integer, nullable=False, default=0)
+    account_status = Column(String, nullable=False, default="active", index=True)
+    deleted_at = Column(DateTime, nullable=True)
 
     active_integration_id = Column(
         Integer,
@@ -78,9 +81,82 @@ class UserSession(Base):
     last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     revoked_at = Column(DateTime, nullable=True)
     revocation_reason = Column(String, nullable=True)
+    csrf_token_hash = Column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_user_sessions_user_revoked", "user_id", "revoked_at"),
+    )
+
+
+class RateLimitBucket(Base):
+    __tablename__ = "rate_limit_buckets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bucket_key = Column(String, nullable=False, unique=True, index=True)
+    window_started_at = Column(DateTime, nullable=False, index=True)
+    request_count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class SecurityAuditEvent(Base):
+    """Append-only security and operator evidence; application code never updates rows."""
+
+    __tablename__ = "security_audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    target_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    action = Column(String, nullable=False)
+    reason = Column(Text, nullable=True)
+    case_id = Column(String, nullable=True, index=True)
+    outcome = Column(String, nullable=False, index=True)
+    event_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class AccountDeletionRequest(Base):
+    __tablename__ = "account_deletion_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    execute_after = Column(DateTime, nullable=False)
+    executed_at = Column(DateTime, nullable=True)
+    legal_hold = Column(Integer, nullable=False, default=0)
+    retention_days = Column(Integer, nullable=False, default=30)
+    confirmation_hash = Column(String, nullable=False)
+    outcome_metadata = Column(JSON, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "id", name="uq_account_deletion_requests_user_id_id"),
+    )
+
+
+class ProviderRevocationAttempt(Base):
+    __tablename__ = "provider_revocation_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    deletion_request_id = Column(
+        Integer, ForeignKey("account_deletion_requests.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    integration_id = Column(Integer, nullable=True, index=True)
+    provider = Column(String, nullable=False)
+    outcome = Column(String, nullable=False, index=True)
+    retryable = Column(Integer, nullable=False, default=1)
+    provider_confirmed = Column(Integer, nullable=False, default=0)
+    detail = Column(Text, nullable=True)
+    attempted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "deletion_request_id"],
+            ["account_deletion_requests.user_id", "account_deletion_requests.id"],
+            name="fk_provider_revocations_user_request", ondelete="CASCADE",
+        ),
+        Index("ix_provider_revocation_attempts_user_request", "user_id", "deletion_request_id"),
     )
 
 
@@ -286,6 +362,74 @@ class AnalyticsEvent(Base):
     )
 
 
+class PlanTier(Base):
+    __tablename__ = "plan_tiers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="active", index=True)
+    billing_mode = Column(String, nullable=False, default="disabled")
+    monthly_price_cents = Column(Integer, nullable=True)
+    currency = Column(String, nullable=False, default="usd")
+    stripe_price_id = Column(String, nullable=True, index=True)
+    features = Column(JSON, nullable=False)
+    display_metadata = Column(JSON, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_plan_tiers_status_sort", "status", "sort_order"),
+    )
+
+
+class UserSubscriptionStatus(Base):
+    __tablename__ = "user_subscription_statuses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    plan_code = Column(String, ForeignKey("plan_tiers.code", ondelete="RESTRICT"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="beta", index=True)
+    billing_status = Column(String, nullable=False, default="not_required", index=True)
+    source = Column(String, nullable=False, default="beta_invite")
+    stripe_customer_id = Column(String, nullable=True, index=True)
+    stripe_subscription_id = Column(String, nullable=True, index=True)
+    assigned_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reason = Column(Text, nullable=True)
+    subscription_metadata = Column(JSON, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    current_period_end = Column(DateTime, nullable=True)
+    canceled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_user_subscription_statuses_plan_status", "plan_code", "status"),
+    )
+
+
+class UserEntitlement(Base):
+    __tablename__ = "user_entitlements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    feature_code = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False, default="subscription", index=True)
+    allowed = Column(Integer, nullable=False, default=1, index=True)
+    reason = Column(Text, nullable=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    entitlement_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ux_user_entitlements_feature", "user_id", "feature_code", "source", unique=True),
+        Index("ix_user_entitlements_user_allowed", "user_id", "allowed"),
+    )
+
+
 class PlatformIntegration(Base):
     __tablename__ = "platform_integrations"
 
@@ -296,11 +440,481 @@ class PlatformIntegration(Base):
     status = Column(String, nullable=False, default="active")
     integration_metadata = Column("metadata", JSON, nullable=True)
     credentials_encrypted = Column(Text, nullable=True)
+    lifecycle_version = Column(Integer, nullable=False, default=1)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    onboarding_request_identity = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
+        UniqueConstraint("user_id", "id", name="uq_platform_integrations_user_id_id"),
+        UniqueConstraint("user_id", "onboarding_request_identity", name="uq_topstep_onboarding_request_identity"),
         Index("ix_platform_integrations_user_provider", "user_id", "provider"),
+        Index("ux_topstep_active_integration", "user_id", unique=True,
+              sqlite_where=text("lower(provider) = 'topstepx' AND status NOT IN ('deleted','inactive','disabled')"),
+              postgresql_where=text("lower(provider) = 'topstepx' AND status NOT IN ('deleted','inactive','disabled')")),
+    )
+
+
+class TopstepCredential(Base):
+    __tablename__ = "topstep_credentials"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    provider = Column(String, nullable=False, default="topstepx")
+    lifecycle_status = Column(String, nullable=False, default="pending_validation")
+    username_encrypted = Column(Text, nullable=True)
+    api_key_encrypted = Column(Text, nullable=True)
+    credential_schema_version = Column(Integer, nullable=False, default=1)
+    credential_fingerprint = Column(String, nullable=False)
+    encryption_key_version = Column(String, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    is_current = Column(Integer, nullable=False, default=1)
+    validated_at = Column(DateTime(timezone=True), nullable=True)
+    last_auth_succeeded_at = Column(DateTime(timezone=True), nullable=True)
+    last_auth_failed_at = Column(DateTime(timezone=True), nullable=True)
+    failure_classification = Column(String, nullable=True)
+    replaced_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_credentials_tenant_integration", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "integration_id", "credential_generation",
+                         name="uq_topstep_credential_generation"),
+        UniqueConstraint("user_id", "id", name="uq_topstep_credentials_user_id_id"),
+        Index("ux_topstep_current_credential", "user_id", "integration_id", unique=True,
+              sqlite_where=text("is_current = 1"), postgresql_where=text("is_current = 1")),
+        Index("ix_topstep_credentials_tenant_state", "user_id", "lifecycle_status"),
+        CheckConstraint("is_current IN (0, 1)", name="ck_topstep_credential_current"),
+        CheckConstraint("credential_generation > 0", name="ck_topstep_credential_generation"),
+    )
+
+
+class TopstepProviderSession(Base):
+    __tablename__ = "topstep_provider_sessions"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    credential_id = Column(Integer, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    state = Column(String, nullable=False, default="valid")
+    session_generation = Column(Integer, nullable=False, default=1)
+    token_encrypted = Column(Text, nullable=True)
+    issued_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    last_validated_at = Column(DateTime(timezone=True), nullable=True)
+    renewal_not_before = Column(DateTime(timezone=True), nullable=False)
+    renewal_lease_owner = Column(String, nullable=True)
+    renewal_lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    fencing_token = Column(Integer, nullable=False, default=0)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    failure_classification = Column(String, nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    lifecycle_version = Column(Integer, nullable=False, default=1)
+    version = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_sessions_tenant_integration", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "credential_id"],
+                             ["topstep_credentials.user_id", "topstep_credentials.id"],
+                             name="fk_topstep_sessions_tenant_credential", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "integration_id", "credential_generation",
+                         name="uq_topstep_session_generation"),
+        Index("ix_topstep_sessions_tenant_expiry", "user_id", "expires_at"),
+        Index("ix_topstep_sessions_tenant_renewal", "user_id", "state", "renewal_not_before"),
+        CheckConstraint("session_generation > 0", name="ck_topstep_session_generation"),
+        CheckConstraint("fencing_token >= 0", name="ck_topstep_session_fence"),
+        CheckConstraint(
+            "state IN ('valid','renewal_due','renewing','validating','reauthenticating','expired','revoked','failed','deleted')",
+            name="ck_topstep_session_state",
+        ),
+    )
+
+
+class TopstepDiscoverySnapshot(Base):
+    __tablename__ = "topstep_discovery_snapshots"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    credential_id = Column(Integer, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    provider_correlation_id = Column(String, nullable=True)
+    discovered_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    safe_response_hash = Column(String, nullable=False)
+    provider_status = Column(String, nullable=False)
+    is_current = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_snapshots_tenant_integration", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "credential_id"],
+                             ["topstep_credentials.user_id", "topstep_credentials.id"],
+                             name="fk_topstep_snapshots_tenant_credential", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "id", name="uq_topstep_snapshots_user_id_id"),
+        Index("ix_topstep_snapshots_tenant_generation", "user_id", "integration_id",
+              "credential_generation"),
+        CheckConstraint("is_current IN (0, 1)", name="ck_topstep_snapshot_current"),
+    )
+
+
+class TopstepDiscoveredAccount(Base):
+    __tablename__ = "topstep_discovered_accounts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    snapshot_id = Column(String, nullable=False)
+    provider_account_id = Column(String, nullable=False)
+    safe_display_label = Column(String, nullable=False)
+    can_trade = Column(Integer, nullable=False, default=0)
+    is_visible = Column(Integer, nullable=False, default=0)
+    is_active = Column(Integer, nullable=False, default=1)
+    first_observed_at = Column(DateTime(timezone=True), nullable=False)
+    last_observed_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_accounts_tenant_integration", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "snapshot_id"],
+                             ["topstep_discovery_snapshots.user_id", "topstep_discovery_snapshots.id"],
+                             name="fk_topstep_accounts_tenant_snapshot", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "snapshot_id", "provider_account_id",
+                         name="uq_topstep_account_snapshot_id"),
+        UniqueConstraint("user_id", "id", name="uq_topstep_accounts_user_id_id"),
+        Index("ix_topstep_accounts_tenant_provider", "user_id", "integration_id", "provider_account_id"),
+    )
+
+
+class TopstepCombineAttestation(Base):
+    __tablename__ = "topstep_combine_attestations"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    discovered_account_id = Column(Integer, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    provider_account_id = Column(String, nullable=False)
+    attestation_version = Column(String, nullable=False)
+    attestation_text = Column(Text, nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    correlation_id = Column(String, nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revocation_classification = Column(String, nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_attest_tenant_integration", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "discovered_account_id"],
+                             ["topstep_discovered_accounts.user_id", "topstep_discovered_accounts.id"],
+                             name="fk_topstep_attest_tenant_account", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "id", name="uq_topstep_attestations_user_id_id"),
+        Index("ix_topstep_attest_tenant_account", "user_id", "integration_id", "provider_account_id"),
+    )
+
+
+class TopstepAccountApproval(Base):
+    __tablename__ = "topstep_account_approvals"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    discovered_account_id = Column(Integer, nullable=False)
+    attestation_id = Column(String, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    provider = Column(String, nullable=False, default="topstepx")
+    provider_account_id = Column(String, nullable=False)
+    cohort = Column(String, nullable=False)
+    state = Column(String, nullable=False, default="approved")
+    approving_operator_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    operator_context = Column(JSON, nullable=False)
+    purpose = Column(Text, nullable=False)
+    case_reference = Column(String, nullable=False)
+    approved_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revoking_operator_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    revocation_classification = Column(String, nullable=True)
+    correlation_id = Column(String, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_approval_tenant_integration", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "discovered_account_id"],
+                             ["topstep_discovered_accounts.user_id", "topstep_discovered_accounts.id"],
+                             name="fk_topstep_approval_tenant_account", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "attestation_id"],
+                             ["topstep_combine_attestations.user_id", "topstep_combine_attestations.id"],
+                             name="fk_topstep_approval_tenant_attestation", ondelete="CASCADE"),
+        Index("ux_topstep_active_approval", "user_id", "integration_id", unique=True,
+              sqlite_where=text("state = 'approved' AND revoked_at IS NULL"),
+              postgresql_where=text("state = 'approved' AND revoked_at IS NULL")),
+        Index("ix_topstep_approval_tenant_account", "user_id", "provider_account_id", "state"),
+    )
+
+
+class TopstepIntegrationTombstone(Base):
+    __tablename__ = "topstep_integration_tombstones"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False, default=1)
+    identity_hash = Column(String, nullable=False)
+    state = Column(String, nullable=False, default="deleted")
+    correlation_id = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_topstep_tombstone_tenant_integration", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "integration_id", name="uq_topstep_tombstone_integration"),
+        Index("ix_topstep_tombstone_tenant_identity", "user_id", "identity_hash"),
+    )
+
+
+class HostedSecurityEpoch(Base):
+    __tablename__ = "hosted_security_epochs"
+    id = Column(Integer, primary_key=True, default=1)
+    database_epoch = Column(Integer, nullable=False)
+    target_epoch = Column(Integer, nullable=True)
+    reconciliation_state = Column(String, nullable=False, default="ready")
+    correlation_id = Column(String, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    failure_classification = Column(String, nullable=True)
+    lifecycle_version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_hosted_security_epoch_singleton"),
+        CheckConstraint("database_epoch > 0", name="ck_hosted_security_epoch_positive"),
+    )
+
+
+class HostedRestoreReconciliation(Base):
+    __tablename__ = "hosted_restore_reconciliations"
+    id = Column(String, primary_key=True)
+    source_epoch = Column(Integer, nullable=False)
+    target_epoch = Column(Integer, nullable=False)
+    state = Column(String, nullable=False, default="started")
+    correlation_id = Column(String, nullable=False, unique=True)
+    operator_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    integrations_suppressed = Column(Integer, nullable=False, default=0)
+    commands_suppressed = Column(Integer, nullable=False, default=0)
+    outbox_suppressed = Column(Integer, nullable=False, default=0)
+    dry_runs_suppressed = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    failure_classification = Column(String, nullable=True)
+    lifecycle_version = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        CheckConstraint("target_epoch > source_epoch", name="ck_restore_epoch_advances"),
+    )
+
+
+class HostedCombineRiskPolicy(Base):
+    __tablename__ = "hosted_combine_risk_policies"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    cohort_id = Column(String, nullable=False)
+    tester_user_id = Column(Integer, nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    provider_account_id = Column(String, nullable=False)
+    policy_version = Column(Integer, nullable=False)
+    state = Column(String, nullable=False, default="active")
+    policy = Column(JSON, nullable=False)
+    required_consent_version = Column(String, nullable=False)
+    effective_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by_operator_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    operator_context = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_hosted_policy_tenant_integration", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "integration_id", "policy_version", name="uq_hosted_policy_version"),
+        UniqueConstraint("user_id", "id", name="uq_hosted_policy_user_id_id"),
+        Index("ix_hosted_policy_tenant_state", "user_id", "integration_id", "state"),
+        Index("ux_hosted_active_risk_policy", "user_id", "integration_id", unique=True,
+              sqlite_where=text("state = 'active'"), postgresql_where=text("state = 'active'")),
+        CheckConstraint("policy_version > 0 AND version > 0", name="ck_hosted_policy_version"),
+        CheckConstraint("state IN ('active','revoked','expired')", name="ck_hosted_policy_state"),
+    )
+
+
+class HostedCombineConsent(Base):
+    __tablename__ = "hosted_combine_consents"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    provider_account_id = Column(String, nullable=False)
+    approval_id = Column(String, nullable=False)
+    policy_version = Column(Integer, nullable=False)
+    consent_version = Column(String, nullable=False)
+    consent_text = Column(Text, nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=False)
+    correlation_id = Column(String, nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_hosted_consent_tenant_integration", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "id", name="uq_hosted_consent_user_id_id"),
+        Index("ix_hosted_consent_binding", "user_id", "integration_id", "credential_generation",
+              "provider_account_id", "policy_version", "accepted_at"),
+        Index("ux_hosted_current_consent", "user_id", "integration_id", "credential_generation",
+              "provider_account_id", "approval_id", "policy_version", "consent_version", unique=True,
+              sqlite_where=text("revoked_at IS NULL"), postgresql_where=text("revoked_at IS NULL")),
+    )
+
+
+class HostedCombineDryRun(Base):
+    __tablename__ = "hosted_combine_dry_runs"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    credential_generation = Column(Integer, nullable=False)
+    provider_account_id = Column(String, nullable=False)
+    approval_id = Column(String, nullable=False)
+    approval_version = Column(Integer, nullable=False)
+    security_epoch = Column(Integer, nullable=False)
+    policy_id = Column(String, nullable=False)
+    policy_version = Column(Integer, nullable=False)
+    consent_id = Column(String, nullable=False)
+    strategy_name = Column(String, nullable=False)
+    strategy_version = Column(String, nullable=False)
+    configuration_hash = Column(String, nullable=False)
+    instrument = Column(String, nullable=False)
+    source_run_id = Column(String, nullable=False)
+    market_input_id = Column(String, nullable=False)
+    market_identity = Column(String, nullable=False)
+    state = Column(String, nullable=False, default="requested", index=True)
+    result_classification = Column(String, nullable=True)
+    proposal_id = Column(String, nullable=True)
+    risk_results = Column(JSON, nullable=True)
+    failure_classification = Column(String, nullable=True)
+    idempotency_key = Column(String, nullable=False)
+    stable_identity = Column(String, nullable=False)
+    correlation_id = Column(String, nullable=False)
+    causation_id = Column(String, nullable=True)
+    lease_owner = Column(String, nullable=True)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    fencing_token = Column(Integer, nullable=False, default=0)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    requested_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(["user_id", "integration_id"],
+                             ["platform_integrations.user_id", "platform_integrations.id"],
+                             name="fk_hosted_dryrun_tenant_integration", ondelete="CASCADE"),
+        ForeignKeyConstraint(["user_id", "policy_id"],
+                             ["hosted_combine_risk_policies.user_id", "hosted_combine_risk_policies.id"],
+                             name="fk_hosted_dryrun_tenant_policy", ondelete="RESTRICT"),
+        ForeignKeyConstraint(["user_id", "consent_id"],
+                             ["hosted_combine_consents.user_id", "hosted_combine_consents.id"],
+                             name="fk_hosted_dryrun_tenant_consent", ondelete="RESTRICT"),
+        UniqueConstraint("user_id", "id", name="uq_hosted_dryrun_user_id_id"),
+        UniqueConstraint("user_id", "idempotency_key", name="uq_hosted_dryrun_idempotency"),
+        UniqueConstraint("user_id", "stable_identity", name="uq_hosted_dryrun_identity"),
+        Index("ix_hosted_dryrun_queue", "state", "requested_at"),
+        Index("ix_hosted_dryrun_tenant_integration", "user_id", "integration_id", "state"),
+        CheckConstraint("fencing_token >= 0", name="ck_hosted_dryrun_fence"),
+        CheckConstraint("state IN ('requested','eligibility_checking','market_data_loading','evaluating',"
+                        "'risk_evaluating','proposed','no_action','denied','degraded','failed','canceled','completed')",
+                        name="ck_hosted_dryrun_state"),
+    )
+
+
+class HostedCombineProposal(Base):
+    __tablename__ = "hosted_combine_proposals"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    dry_run_id = Column(String, nullable=False)
+    evaluation_identity = Column(String, nullable=False)
+    strategy_signal = Column(String, nullable=False)
+    rationale = Column(Text, nullable=False)
+    instrument = Column(String, nullable=False)
+    side = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    order_type = Column(String, nullable=False)
+    limit_price = Column(Float, nullable=True)
+    stop_price = Column(Float, nullable=True)
+    policy_version = Column(Integer, nullable=False)
+    risk_checks = Column(JSON, nullable=False)
+    data_freshness_seconds = Column(Integer, nullable=False)
+    schedule_allowed = Column(Integer, nullable=False)
+    position_snapshot_version = Column(String, nullable=True)
+    risk_snapshot_version = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="dry_run_only")
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("user_id", "id", name="uq_hosted_proposal_user_id_id"),
+        ForeignKeyConstraint(["user_id", "dry_run_id"],
+                             ["hosted_combine_dry_runs.user_id", "hosted_combine_dry_runs.id"],
+                             name="fk_hosted_proposal_tenant_dryrun", ondelete="CASCADE"),
+        UniqueConstraint("user_id", "dry_run_id", name="uq_hosted_proposal_per_dryrun"),
+        CheckConstraint("quantity > 0", name="ck_hosted_proposal_quantity"),
+        CheckConstraint("status = 'dry_run_only'", name="ck_hosted_proposal_status"),
+    )
+
+
+class KeyManagementOperation(Base):
+    __tablename__ = "key_management_operations"
+
+    id = Column(String, primary_key=True)
+    operation_type = Column(String, nullable=False, index=True)
+    source_version = Column(String, nullable=True)
+    target_version = Column(String, nullable=False)
+    state = Column(String, nullable=False, default="planned", index=True)
+    total_count = Column(Integer, nullable=False, default=0)
+    succeeded_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    operation_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class KeyManagementItem(Base):
+    __tablename__ = "key_management_items"
+
+    id = Column(Integer, primary_key=True)
+    operation_id = Column(String, ForeignKey("key_management_operations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    integration_id = Column(Integer, nullable=False)
+    status = Column(String, nullable=False, default="pending", index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    source_hash = Column(String, nullable=False)
+    result_hash = Column(String, nullable=True)
+    claimed_by = Column(String, nullable=True)
+    claim_expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    failure_code = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("operation_id", "integration_id", name="uq_key_management_item_operation_record"),
+        ForeignKeyConstraint(
+            ["user_id", "integration_id"], ["platform_integrations.user_id", "platform_integrations.id"],
+            name="fk_key_management_item_tenant_integration", ondelete="CASCADE",
+        ),
+        Index("ix_key_management_items_operation_status", "operation_id", "status"),
     )
 
 
@@ -320,6 +934,8 @@ class PaperOrder(Base):
     stop_price = Column(Float, nullable=True)
     source = Column(String, nullable=False)
     idempotency_key = Column(String, nullable=False)
+    simulation_run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    simulation_fencing_token = Column(Integer, nullable=True)
     order_fingerprint = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, default="submitted", index=True)
     provider_order_id = Column(String, nullable=True, index=True)
@@ -360,6 +976,9 @@ class PaperFill(Base):
     side = Column(String, nullable=False)
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=True)
+    simulation_run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    simulation_fencing_token = Column(Integer, nullable=True)
+    execution_identity = Column(String, nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -373,6 +992,9 @@ class PaperPosition(Base):
     symbol = Column(String, nullable=False, index=True)
     quantity = Column(Integer, nullable=False, default=0)
     avg_price = Column(Float, nullable=False, default=0.0)
+    simulation_run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    simulation_fencing_token = Column(Integer, nullable=True)
+    state_version = Column(Integer, nullable=False, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -394,6 +1016,9 @@ class PaperAccountSnapshot(Base):
     unrealized_pnl = Column(Float, nullable=False, default=0.0)
     margin_used = Column(Float, nullable=False, default=0.0)
     last_mark_price = Column(Float, nullable=True)
+    simulation_run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    simulation_fencing_token = Column(Integer, nullable=True)
+    state_version = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -419,6 +1044,9 @@ class PaperLedgerEntry(Base):
     unrealized_pnl = Column(Float, nullable=False, default=0.0)
     description = Column(Text, nullable=True)
     entry_metadata = Column(JSON, nullable=True)
+    simulation_run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    simulation_fencing_token = Column(Integer, nullable=True)
+    execution_identity = Column(String, nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -532,6 +1160,9 @@ class RiskDecision(Base):
     reason_code = Column(String, nullable=False, index=True)
     reason = Column(Text, nullable=False)
     decision_metadata = Column(JSON, nullable=True)
+    simulation_run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    simulation_fencing_token = Column(Integer, nullable=True)
+    evaluation_identity = Column(String, nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -697,6 +1328,216 @@ class StrategySignal(Base):
         Index("ix_strategy_signals_user_config", "user_id", "strategy_config_id"),
         Index("ix_strategy_signals_user_created", "user_id", "created_at"),
     )
+
+
+class SimulationRun(Base):
+    __tablename__ = "simulation_runs"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    state = Column(String, nullable=False, default="requested", index=True)
+    state_version = Column(Integer, nullable=False, default=1)
+    fencing_token = Column(Integer, nullable=False, default=0)
+    desired_state = Column(String, nullable=False, default="running")
+    scope_key = Column(String, nullable=False, index=True)
+    active_scope_key = Column(String, nullable=True, unique=True, index=True)
+    symbol = Column(String, nullable=False)
+    configuration = Column(JSON, nullable=False)
+    configuration_hash = Column(String, nullable=False)
+    integration_id = Column(Integer, nullable=True)
+    credential_generation = Column(Integer, nullable=True)
+    security_epoch = Column(Integer, nullable=True)
+    strategy_version = Column(String, nullable=False, default="rsi-threshold-v1")
+    environment = Column(String, nullable=False, default="simulation")
+    strategy_config_id = Column(Integer, ForeignKey("strategy_configs.id", ondelete="SET NULL"), nullable=True)
+    correlation_id = Column(String, nullable=False, index=True)
+    causation_id = Column(String, nullable=True)
+    kill_requested_at = Column(DateTime, nullable=True)
+    last_heartbeat_at = Column(DateTime, nullable=True)
+    last_checkpoint_sequence = Column(Integer, nullable=False, default=0)
+    last_checkpoint_hash = Column(String, nullable=True)
+    last_market_data_at = Column(DateTime(timezone=True), nullable=True)
+    last_evaluation_at = Column(DateTime(timezone=True), nullable=True)
+    data_freshness = Column(String, nullable=False, default="unknown")
+    degraded_reason = Column(String, nullable=True)
+    failure_code = Column(String, nullable=True)
+    failure_summary = Column(Text, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime, nullable=True)
+    stopped_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class SimulationLease(Base):
+    __tablename__ = "simulation_leases"
+    run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String, nullable=False)
+    fencing_token = Column(Integer, nullable=False)
+    acquired_at = Column(DateTime, nullable=False)
+    renewed_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+
+class SimulationCommand(Base):
+    __tablename__ = "simulation_commands"
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    idempotency_key = Column(String, nullable=False)
+    command = Column(String, nullable=False)
+    integration_id = Column(Integer, nullable=True)
+    credential_generation = Column(Integer, nullable=True)
+    security_epoch = Column(Integer, nullable=True)
+    stable_identity = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="pending")
+    result = Column(JSON, nullable=True)
+    correlation_id = Column(String, nullable=False, index=True)
+    causation_id = Column(String, nullable=True)
+    failure_code = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    __table_args__ = (Index("ux_simulation_commands_tenant_key", "user_id", "idempotency_key", unique=True),)
+
+
+class SimulationCheckpoint(Base):
+    __tablename__ = "simulation_checkpoints"
+    id = Column(Integer, primary_key=True)
+    run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    fencing_token = Column(Integer, nullable=False)
+    sequence = Column(Integer, nullable=False)
+    checkpoint = Column(JSON, nullable=False)
+    market_data_id = Column(String, nullable=True)
+    configuration_hash = Column(String, nullable=False)
+    strategy_version = Column(String, nullable=False)
+    checkpoint_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (Index("ux_simulation_checkpoint_sequence", "run_id", "sequence", unique=True),)
+
+
+class SimulationMarketInput(Base):
+    __tablename__ = "simulation_market_inputs"
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    source = Column(String, nullable=False)
+    instrument = Column(String, nullable=False)
+    timeframe = Column(String, nullable=False)
+    event_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    provider_sequence = Column(String, nullable=True)
+    source_identity = Column(String, nullable=False)
+    content_hash = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False)
+    status = Column(String, nullable=False, default="pending", index=True)
+    freshness = Column(String, nullable=False, default="unknown")
+    failure_code = Column(String, nullable=True)
+    processing_owner = Column(String, nullable=True)
+    processing_fence = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        Index("ux_simulation_market_source_identity", "run_id", "source_identity", unique=True),
+        Index("ix_simulation_market_pending", "status", "created_at"),
+    )
+
+
+class SimulationEvaluation(Base):
+    __tablename__ = "simulation_evaluations"
+    id = Column(String, primary_key=True)
+    run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    market_input_id = Column(String, ForeignKey("simulation_market_inputs.id", ondelete="CASCADE"), nullable=False)
+    evaluation_identity = Column(String, nullable=False)
+    fencing_token = Column(Integer, nullable=False)
+    strategy_name = Column(String, nullable=False)
+    strategy_version = Column(String, nullable=False)
+    configuration_hash = Column(String, nullable=False)
+    lookback_identity = Column(String, nullable=False)
+    signal = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    rationale = Column(Text, nullable=False)
+    market_snapshot = Column(JSON, nullable=False)
+    freshness = Column(String, nullable=False)
+    correlation_id = Column(String, nullable=False, index=True)
+    causation_id = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    __table_args__ = (
+        Index("ux_simulation_evaluation_identity", "run_id", "evaluation_identity", unique=True),
+    )
+
+
+class SimulationRiskCounter(Base):
+    __tablename__ = "simulation_risk_counters"
+    run_id = Column(String, ForeignKey("simulation_runs.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_count = Column(Integer, nullable=False, default=0)
+    consecutive_losses = Column(Integer, nullable=False, default=0)
+    realized_pnl = Column(Float, nullable=False, default=0.0)
+    fees = Column(Float, nullable=False, default=0.0)
+    version = Column(Integer, nullable=False, default=0)
+    last_execution_identity = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    aggregate_type = Column(String, nullable=False)
+    aggregate_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False)
+    integration_id = Column(Integer, nullable=True)
+    credential_generation = Column(Integer, nullable=True)
+    security_epoch = Column(Integer, nullable=True)
+    stable_identity = Column(String, nullable=True)
+    payload = Column(JSON, nullable=False)
+    status = Column(String, nullable=False, default="pending", index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    available_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    terminal_reason = Column(String, nullable=True)
+    claim_owner = Column(String, nullable=True)
+    claim_expires_at = Column(DateTime, nullable=True, index=True)
+    correlation_id = Column(String, nullable=False, index=True)
+    causation_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "id", name="uq_outbox_events_user_id_id"),
+    )
+
+
+class OutboxDelivery(Base):
+    __tablename__ = "outbox_deliveries"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_id = Column(String, ForeignKey("outbox_events.id", ondelete="CASCADE"), nullable=False)
+    consumer = Column(String, nullable=False)
+    outcome = Column(String, nullable=False)
+    attempt = Column(Integer, nullable=False, default=1)
+    failure_code = Column(String, nullable=True)
+    processed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (
+        Index("ux_outbox_delivery_consumer", "event_id", "consumer", unique=True),
+        Index("ix_outbox_deliveries_user_event", "user_id", "event_id"),
+        ForeignKeyConstraint(
+            ["user_id", "event_id"], ["outbox_events.user_id", "outbox_events.id"],
+            name="fk_outbox_deliveries_user_event", ondelete="CASCADE",
+        ),
+    )
+
+
+class DeletionTombstone(Base):
+    __tablename__ = "deletion_tombstones"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    identity_hash = Column(String, nullable=False, index=True)
+    deletion_request_id = Column(Integer, nullable=False, index=True)
+    executed_at = Column(DateTime, nullable=False)
+    purge_eligible_at = Column(DateTime, nullable=False)
+    legal_hold = Column(Integer, nullable=False, default=0)
+    status = Column(String, nullable=False, default="active")
 
 
 class UserCreate(BaseModel):

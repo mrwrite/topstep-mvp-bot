@@ -81,7 +81,7 @@ def test_production_config_requires_explicit_encryption_key_and_no_create_all():
         "resend_from_email": "noreply@example.com",
         "frontend_url": "https://demo.example.com",
     }
-    with pytest.raises(ConfigError, match="CREDENTIALS_ENCRYPTION_KEY"):
+    with pytest.raises(ConfigError, match="TPM2"):
         validate_config(AppConfig(**base))
 
     with pytest.raises(ConfigError, match="ALLOW_CREATE_ALL"):
@@ -95,14 +95,15 @@ def test_production_config_requires_explicit_encryption_key_and_no_create_all():
             )
         )
 
-    validate_config(
-        AppConfig(
-            **{
-                **base,
-                "credentials_encryption_key": Fernet.generate_key().decode("utf-8"),
-            }
+    with pytest.raises(ConfigError, match="TPM2"):
+        validate_config(
+            AppConfig(
+                **{
+                    **base,
+                    "credentials_encryption_key": Fernet.generate_key().decode("utf-8"),
+                }
+            )
         )
-    )
 
 
 def test_redaction_removes_secret_values():
@@ -116,10 +117,10 @@ def test_redaction_removes_secret_values():
     assert redacted["nested"]["symbol"] == "ES"
 
 
-def test_fresh_database_can_upgrade_to_alembic_head(tmp_path):
+def test_fresh_database_can_upgrade_to_alembic_head(monkeypatch, tmp_path):
     db_path = tmp_path / "fresh-live-readiness.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
 
     command.upgrade(cfg, "head")
 

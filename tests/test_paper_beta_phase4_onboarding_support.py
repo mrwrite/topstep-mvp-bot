@@ -41,7 +41,9 @@ def login_user(username: str, password: str = "StrongPass1") -> str:
 
 
 def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "user-agent": "pytest-browser onboarding-suite"}
+    return {"Authorization": f"Bearer {token}", "user-agent": "pytest-browser onboarding-suite",
+            "X-Operator-Reason": "Automated authorization verification",
+            "X-Operator-Case-ID": "TEST-SUPPORT", "X-Operator-Target-User": "1"}
 
 
 def make_beta_ready_user(username: str = "alice", email: str = "alice@example.com") -> str:

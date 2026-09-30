@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../router';
 import { api, API_BASE_URL } from '../api';
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -48,17 +48,10 @@ function Register() {
       body.append('password', form.password);
       body.append('grant_type', 'password');
 
-      const tokenResponse = await api.post('/auth/token', body, {
+      await api.post('/auth/token', body, {
         baseURL: API_BASE_URL,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
-      const token = tokenResponse.data?.access_token ?? tokenResponse.data?.token;
-      if (!token) {
-        setError('Registration succeeded, but login failed. Please sign in.');
-        setIsLoading(false);
-        return;
-      }
-      localStorage.setItem('token', token);
       navigate('/integrations', { replace: true });
     } catch (err) {
       console.error('Registration failed', err);

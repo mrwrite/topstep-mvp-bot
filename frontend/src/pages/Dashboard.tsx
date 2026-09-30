@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../router';
 import { api, API_BASE_URL } from '../api';
 import { Contract } from '../api/contracts';
 import { useActiveIntegrationContracts } from '../hooks/useActiveIntegrationContracts';
@@ -210,6 +210,39 @@ type HelpTopic = {
   summary: string;
 };
 
+type SubscriptionPlan = {
+  code: string;
+  name: string;
+  status: string;
+  billing_mode: string;
+  features: string[];
+  checkout_enabled: boolean;
+};
+
+type SubscriptionStatus = {
+  subscription: {
+    plan_code: string;
+    status: string;
+    billing_status: string;
+  } | null;
+  entitlements: string[];
+  feature_gates: Array<{
+    feature_code: string;
+    allowed: boolean;
+    reason_code: string;
+    detail: string;
+    live_trading_enabled: boolean;
+  }>;
+  billing: {
+    billing_enabled: boolean;
+    checkout_enabled: boolean;
+    payment_collection_enabled: boolean;
+    reason_code: string;
+  };
+  plans: SubscriptionPlan[];
+  live_trading_enabled: boolean;
+};
+
 type ReadinessItem = {
   label: string;
   ready: boolean;
@@ -298,6 +331,7 @@ function Dashboard() {
   const [betaStatus, setBetaStatus] = useState<BetaStatus | null>(null);
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [helpTopics, setHelpTopics] = useState<HelpTopic[]>([]);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
   const [legalBusy, setLegalBusy] = useState(false);
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportForm, setSupportForm] = useState({
@@ -398,6 +432,11 @@ function Dashboard() {
     setHelpTopics(res.data?.topics ?? []);
   };
 
+  const refreshSubscriptionStatus = async () => {
+    const res = await api.get('/subscription/status');
+    setSubscriptionStatus(res.data);
+  };
+
   const completeOnboardingMilestone = async (code: string) => {
     try {
       const res = await api.post('/onboarding/milestones', { code });
@@ -485,7 +524,6 @@ function Dashboard() {
       })
       .catch(err => {
         if (err.response && err.response.status === 401) {
-          localStorage.removeItem('token');
           navigate('/', { replace: true, state: { expired: true } });
         } else {
           setConnectionStatus('disconnected');
@@ -526,6 +564,10 @@ function Dashboard() {
       setReadinessError('Onboarding status is unavailable. Paper beta access remains blocked.');
     });
     refreshHelpTopics().catch(err => console.error('Failed to load help topics', err));
+    refreshSubscriptionStatus().catch(err => {
+      console.error('Failed to load subscription status', err);
+      setReadinessError('Subscription entitlement status is unavailable. Beta features remain gated by the backend.');
+    });
   }, [navigate]);
 
   useEffect(() => {
@@ -786,13 +828,6 @@ function Dashboard() {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
 
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setStatusMessage('Missing access token. Please sign in again.');
-      setSessionState('Error');
-      return;
-    }
-
     let sessionId = '';
     try {
       const sessionRes = await api.post('/scheduler/bot-sessions', {
@@ -827,7 +862,9 @@ function Dashboard() {
       interval_seconds: String(intervalSeconds),
       integration_id: String(activeIntegration?.id)
     });
-    const es = new EventSource(`${API_BASE_URL}/scheduler/run-bot?${streamParams.toString()}`);
+    const es = new EventSource(`${API_BASE_URL}/scheduler/run-bot?${streamParams.toString()}`, {
+      withCredentials: true
+    });
     eventSourceRef.current = es;
     setLogs([]);
     setPendingTrade(null);
@@ -888,9 +925,9 @@ function Dashboard() {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     stopStream();
-    localStorage.removeItem('token');
+    await api.post('/auth/logout').catch(() => undefined);
     navigate('/', { replace: true, state: { loggedOut: true } });
   };
 
@@ -1054,6 +1091,46 @@ function Dashboard() {
             <p className="muted tiny">
               Paper beta access is invite-only. Approval does not enable live trading or billing.
             </p>
+          </div>
+
+          <div className="subscription-panel" aria-label="Subscription and entitlement status">
+            <div className="panel-header compact-header">
+              <div>
+                <p className="eyebrow">Subscription</p>
+                <strong>{subscriptionStatus?.subscription?.plan_code ?? 'Checking'}</strong>
+              </div>
+              <span className="pill warning">Billing disabled</span>
+            </div>
+            <p className="muted tiny">
+              Paper beta access is free during invite-only beta. Checkout and payment collection are disabled.
+            </p>
+            <div className="simple-list compact-list">
+              <div className="list-row">
+                <span>Billing</span>
+                <strong>{subscriptionStatus?.billing.checkout_enabled ? 'Available' : 'Unavailable'}</strong>
+              </div>
+              <div className="list-row">
+                <span>Live trading</span>
+                <strong>{subscriptionStatus?.live_trading_enabled ? 'Enabled' : 'Disabled'}</strong>
+              </div>
+              <div className="list-row">
+                <span>Entitlements</span>
+                <strong>{subscriptionStatus?.entitlements.length ?? 0}</strong>
+              </div>
+            </div>
+            <div className="readiness-list" aria-label="Feature gates">
+              {(subscriptionStatus?.feature_gates ?? []).map(gate => (
+                <div className="readiness-item" key={gate.feature_code}>
+                  <span className={gate.allowed ? 'check good' : 'check blocked'}>
+                    {gate.allowed ? 'OK' : 'No'}
+                  </span>
+                  <div>
+                    <strong>{gate.feature_code.replaceAll('_', ' ')}</strong>
+                    <p className="tiny muted">{gate.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="legal-panel" aria-label="Legal acceptance status">

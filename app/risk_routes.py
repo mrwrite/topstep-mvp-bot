@@ -8,6 +8,9 @@ from app import database, models
 from app.auth_routes import get_current_user_model
 from app.risk_service import risk_service, serialize_kill_switch, serialize_risk_decision, serialize_risk_settings
 from app.trading_safety import PAPER_MODE, normalize_mode
+from app.authorization import TenantContext
+from app.durable_simulation import submit_command
+from app.tenant_repository import TenantRepository
 
 
 router = APIRouter()
@@ -31,19 +34,14 @@ class KillSwitchActivateRequest(BaseModel):
     reason: str | None = None
 
 
-def _assert_integration_owned(
-    db: Session,
-    *,
-    user_id: int,
-    integration_id: int | None,
-) -> None:
+def _repository(db: Session, user: models.User) -> TenantRepository:
+    return TenantRepository(db, TenantContext(user.id, user.username, actor_user_id=user.id, source="session"))
+
+
+def _assert_integration_owned(repository: TenantRepository, *, integration_id: int | None) -> None:
     if integration_id is None:
         return
-    integration = (
-        db.query(models.PlatformIntegration)
-        .filter(models.PlatformIntegration.id == integration_id, models.PlatformIntegration.user_id == user_id)
-        .first()
-    )
+    integration = repository.get(models.PlatformIntegration, integration_id)
     if not integration:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found.")
 
@@ -57,7 +55,7 @@ def get_risk_settings(
     db: Session = Depends(database.get_db),
 ):
     mode = normalize_mode(trading_mode)
-    _assert_integration_owned(db, user_id=current_user.id, integration_id=integration_id)
+    _assert_integration_owned(_repository(db, current_user), integration_id=integration_id)
     settings = risk_service.get_or_create_settings(
         db,
         user_id=current_user.id,
@@ -83,7 +81,7 @@ def update_risk_settings(
             detail="Live trading remains disabled. Risk settings cannot enable live execution.",
             headers={"X-Readiness-Blocker": "live_disabled"},
         )
-    _assert_integration_owned(db, user_id=current_user.id, integration_id=request.integration_id)
+    _assert_integration_owned(_repository(db, current_user), integration_id=request.integration_id)
     settings = risk_service.update_settings(
         db,
         user_id=current_user.id,
@@ -104,10 +102,10 @@ def list_kill_switches(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    query = db.query(models.KillSwitch).filter(models.KillSwitch.user_id == current_user.id)
-    if active_only:
-        query = query.filter(models.KillSwitch.active == 1)
-    switches = query.order_by(models.KillSwitch.activated_at.desc()).limit(100).all()
+    criteria = (models.KillSwitch.active == 1,) if active_only else ()
+    switches = _repository(db, current_user).list(
+        models.KillSwitch, *criteria, order_by=(models.KillSwitch.activated_at.desc(),), limit=100
+    )
     return [serialize_kill_switch(kill_switch) for kill_switch in switches]
 
 
@@ -117,7 +115,8 @@ def activate_kill_switch(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    _assert_integration_owned(db, user_id=current_user.id, integration_id=request.integration_id)
+    repository = _repository(db, current_user)
+    _assert_integration_owned(repository, integration_id=request.integration_id)
     kill_switch = risk_service.activate_kill_switch(
         db,
         user_id=current_user.id,
@@ -127,6 +126,26 @@ def activate_kill_switch(
         bot_session_id=request.bot_session_id,
         reason=request.reason,
     )
+    tenant = TenantContext(current_user.id, current_user.username)
+    active_runs = repository.list(models.SimulationRun,
+        models.SimulationRun.state.notin_(("stopped", "failed", "killed")),
+        lock=True,
+    )
+    for run in active_runs:
+        config = run.configuration or {}
+        if request.bot_session_id and run.id != request.bot_session_id:
+            continue
+        if request.integration_id is not None and config.get("integration_id") != request.integration_id:
+            continue
+        if request.account_id is not None and config.get("account_id") != request.account_id:
+            continue
+        submit_command(
+            db, tenant, run.id,
+            idempotency_key=f"kill-switch:{kill_switch.id}:{run.id}",
+            name="kill",
+        )
+    db.commit()
+    db.refresh(kill_switch)
     return serialize_kill_switch(kill_switch)
 
 
@@ -150,11 +169,7 @@ def list_risk_decisions(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    decisions = (
-        db.query(models.RiskDecision)
-        .filter(models.RiskDecision.user_id == current_user.id)
-        .order_by(models.RiskDecision.created_at.desc())
-        .limit(100)
-        .all()
+    decisions = _repository(db, current_user).list(
+        models.RiskDecision, order_by=(models.RiskDecision.created_at.desc(),), limit=100
     )
     return [serialize_risk_decision(decision) for decision in decisions]

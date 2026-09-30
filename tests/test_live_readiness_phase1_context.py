@@ -50,7 +50,7 @@ def login_user(username: str) -> str:
 
 
 def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token}", "X-Internal-Paper-Fixture": "true"}
 
 
 def create_integration(
@@ -262,10 +262,12 @@ def test_trading_sensitive_routes_use_trading_context_service(monkeypatch):
     with client.stream(
         "GET",
         f"/scheduler/run-bot?session_id={session_id}&symbol=ES&integration_id={topstepx['id']}",
+        headers=auth_headers(token),
     ) as response:
         assert response.status_code == 200
         body = "".join(response.iter_text())
-    assert "Market data is not implemented for the selected provider." in body
+    assert '"type": "run_status"' in body
+    assert '"simulation": true' in body
 
     assert len(calls) >= 7
     flattened = {capability for call in calls for capability in call}

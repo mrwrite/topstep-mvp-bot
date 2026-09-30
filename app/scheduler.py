@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 import asyncio
 import json
 import os
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -36,11 +36,25 @@ from app.strategy_engine import (
 )
 from app.trading_context import trading_context_service
 from app.trading_safety import build_order_intent
+from app.authorization import TenantContext
+from app.tenant_repository import TenantRepository
+from app.time_utils import as_utc, utc_now
+from app.durable_simulation import (
+    DurableRunError,
+    submit_command,
+    submit_start,
+)
 from logger import log_trade
 
 
 DEBUG = os.getenv("DEBUG", "0") == "1"
 router = APIRouter()
+
+
+def _tenant_repository(db: Session, user: models.User) -> TenantRepository:
+    return TenantRepository(
+        db, TenantContext(user.id, user.username, actor_user_id=user.id, source="session")
+    )
 
 DEFAULT_BOT_STATE = {
     "buy_threshold": 30,
@@ -58,6 +72,7 @@ BOT_SESSIONS: dict[str, dict] = {}
 
 
 def get_bot_state(user_id: int) -> dict:
+    """Deprecated test compatibility only; never authorizes or owns execution."""
     if user_id not in BOT_STATES:
         BOT_STATES[user_id] = dict(DEFAULT_BOT_STATE)
     return BOT_STATES[user_id]
@@ -131,16 +146,38 @@ def update_config(
     config: BotConfig,
     current_user: models.User = Depends(get_current_user_model),
 ):
-    state_for_user = get_bot_state(current_user.id)
-    apply_bot_config(state_for_user, config, current_user.id)
-    return {"status": "updated", **state_for_user}
+    validated = dict(DEFAULT_BOT_STATE)
+    apply_bot_config(validated, config, current_user.id)
+    validated.pop("stop", None)
+    return {"status": "validated_not_persisted", **validated}
 
 
 @router.post("/stop-bot")
-def stop_bot(current_user: models.User = Depends(get_current_user_model)):
-    state_for_user = get_bot_state(current_user.id)
-    state_for_user["stop"] = True
-    return {"status": "stopping"}
+def stop_bot(
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    runs = _tenant_repository(db, current_user).list(
+        models.SimulationRun,
+        models.SimulationRun.state.notin_(("stopped", "failed", "killed")),
+        order_by=(models.SimulationRun.created_at.desc(),), limit=1,
+    )
+    run = runs[0] if runs else None
+    if not run:
+        return {"status": "stopped", "duplicate": True}
+    tenant = TenantContext(current_user.id, current_user.username)
+    run, command_row, duplicate = submit_command(
+        db, tenant, run.id, idempotency_key=idempotency_key or f"legacy-stop:{uuid4().hex}", name="stop"
+    )
+    db.commit()
+    return {
+        "status": run.state,
+        "run_id": run.id,
+        "command_id": command_row.id,
+        "command_status": command_row.status,
+        "duplicate": duplicate,
+    }
 
 
 @router.post("/bot-sessions")
@@ -148,8 +185,9 @@ def create_bot_session(
     config: BotSessionCreate,
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    state_for_user = get_bot_state(current_user.id)
+    state_for_user = dict(DEFAULT_BOT_STATE)
     apply_bot_config(state_for_user, config, current_user.id)
 
     if config.integration_id is None:
@@ -183,7 +221,6 @@ def create_bot_session(
         account_id=context.account_id,
     )
 
-    state_for_user["stop"] = False
     session_id = uuid4().hex
     strategy_config = create_strategy_config(
         db,
@@ -198,13 +235,32 @@ def create_bot_session(
         },
         bot_session_id=session_id,
     )
-    BOT_SESSIONS[session_id] = {
-        "user_id": current_user.id,
-        "symbol": context.symbol,
-        "integration_id": integration.id,
-        "account_id": context.account_id,
-        "strategy_config_id": strategy_config.id,
-    }
+    tenant = TenantContext(current_user.id, current_user.username)
+    try:
+        run, command_row, duplicate = submit_start(
+            db,
+            tenant,
+            symbol=context.symbol,
+            configuration={
+                "environment": "simulation",
+                "trading_mode": "paper",
+                "integration_id": integration.id,
+                "account_id": context.account_id,
+                "strategy_config_id": strategy_config.id,
+                "buy_threshold": state_for_user["buy_threshold"],
+                "sell_threshold": state_for_user["sell_threshold"],
+                "auto_trade": state_for_user["auto_trade"],
+                "quantity": state_for_user["quantity"],
+                "interval_seconds": state_for_user["interval_seconds"],
+                "bar_interval_minutes": state_for_user["bar_interval_minutes"],
+            },
+            strategy_config_id=strategy_config.id,
+            idempotency_key=idempotency_key or f"start:{session_id}",
+        )
+    except DurableRunError as exc:
+        raise HTTPException(status_code=409, detail="Simulation run could not be started.", headers={"X-Run-Failure": exc.code}) from exc
+    session_id = run.id
+    BOT_SESSIONS[session_id] = {"durable_compatibility_marker": True}
     log_event(
         "bot",
         "bot_session_created",
@@ -226,6 +282,11 @@ def create_bot_session(
     db.commit()
     return {
         "session_id": session_id,
+        "run_id": session_id,
+        "command_id": command_row.id,
+        "command_status": command_row.status,
+        "run_state": run.state,
+        "duplicate": duplicate,
         "trading_mode": state_for_user["trading_mode"],
         "strategy_config": serialize_strategy_config(strategy_config),
     }
@@ -267,11 +328,8 @@ def list_strategy_configs(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    configs = (
-        db.query(models.StrategyConfig)
-        .filter(models.StrategyConfig.user_id == current_user.id)
-        .order_by(models.StrategyConfig.created_at.desc())
-        .all()
+    configs = _tenant_repository(db, current_user).list(
+        models.StrategyConfig, order_by=(models.StrategyConfig.created_at.desc(),)
     )
     return [serialize_strategy_config(config) for config in configs]
 
@@ -281,12 +339,8 @@ def list_strategy_signals(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    signals = (
-        db.query(models.StrategySignal)
-        .filter(models.StrategySignal.user_id == current_user.id)
-        .order_by(models.StrategySignal.created_at.desc())
-        .limit(100)
-        .all()
+    signals = _tenant_repository(db, current_user).list(
+        models.StrategySignal, order_by=(models.StrategySignal.created_at.desc(),), limit=100
     )
     return [serialize_strategy_signal(signal) for signal in signals]
 
@@ -382,7 +436,7 @@ def get_paper_ledger(
 
 
 def fetch_price_data(adapter: TopStepXAdapter, symbol: str, interval_minutes=1, lookback_minutes=100):
-    end_time = datetime.utcnow()
+    end_time = utc_now()
     start_time = end_time - timedelta(days=30)
 
     token = adapter._get_session_token()
@@ -394,8 +448,8 @@ def fetch_price_data(adapter: TopStepXAdapter, symbol: str, interval_minutes=1, 
         token=token,
         contract_id=contract_id,
         interval_minutes=interval_minutes,
-        start_time=start_time.isoformat() + "Z",
-        end_time=end_time.isoformat() + "Z",
+        start_time=start_time.isoformat().replace("+00:00", "Z"),
+        end_time=end_time.isoformat().replace("+00:00", "Z"),
         limit=lookback_minutes,
     )
     if not bars:
@@ -428,202 +482,40 @@ def run_bot(
     auto_trade: bool = True,
     bar_interval_minutes: int = 1,
     integration_id: int | None = None,
+    current_user: models.User = Depends(get_current_user_model),
 ):
-    session = BOT_SESSIONS.get(session_id)
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bot session not found.")
+    # Compatibility SSE is status-only. It cannot evaluate strategy or place orders.
+    db = database.SessionLocal()
+    try:
+        run = _tenant_repository(db, current_user).get(models.SimulationRun, session_id)
+        if not run:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bot session not found.")
+    finally:
+        db.close()
 
-    def log(message: str):
-        print(message)
+    def event(message: str):
         return f"data: {message}\n\n"
 
-    async def wait_interval():
-        nonlocal interval_seconds
-        for remaining in range(interval_seconds, 0, -1):
-            if DEBUG:
-                yield log(f"Next fetch in {remaining} seconds")
-            await asyncio.sleep(1)
-            session_state = get_bot_state(session["user_id"])
-            interval_seconds = session_state.get("interval_seconds", interval_seconds)
-            if session_state.get("stop"):
-                yield log("Bot stop requested. Exiting loop.")
-                return
-
     async def event_stream():
-        nonlocal buy_threshold, sell_threshold, auto_trade, quantity, interval_seconds, bar_interval_minutes
-        session_state = get_bot_state(session["user_id"])
-        session_state.update(
-            {
-                "buy_threshold": buy_threshold,
-                "sell_threshold": sell_threshold,
-                "auto_trade": auto_trade,
-                "quantity": quantity,
-                "interval_seconds": interval_seconds,
-                "bar_interval_minutes": bar_interval_minutes,
-                "stop": False,
-                "trading_mode": session_state.get("trading_mode", "paper"),
-            }
-        )
-
-        yield log(f"Starting paper bot loop at {datetime.now()}")
-
-        db = database.SessionLocal()
+        status_db = database.SessionLocal()
         try:
-            user = db.query(models.User).filter(models.User.id == session["user_id"]).first()
-            if not user:
-                yield log("User not found for bot session.")
+            current = _tenant_repository(status_db, current_user).get(models.SimulationRun, session_id)
+            if not current:
+                yield event(json.dumps({"type": "run_status", "state": "unavailable"}))
                 return
-
-            context = trading_context_service.resolve(
-                db,
-                user_id=user.id,
-                trading_mode=session_state.get("trading_mode", "paper"),
-                integration_id=integration_id or session.get("integration_id"),
-                account_id=session.get("account_id"),
-                symbol=symbol,
-                required_capabilities={
-                    IntegrationCapability.BROKER_TRADING,
-                    IntegrationCapability.MARKET_DATA,
-                },
-                require_integration=True,
-                require_account=True,
-                require_contract=True,
-            )
-            integration = context.integration
-
-            adapter = get_adapter(integration) if integration else None
-
-            if not adapter:
-                yield log("No active market data integration configured.")
-                return
-
-            if not isinstance(adapter, TopStepXAdapter):
-                yield log("Market data is not implemented for the selected provider.")
-                return
-
-            strategy_config = (
-                db.query(models.StrategyConfig)
-                .filter(
-                    models.StrategyConfig.user_id == user.id,
-                    models.StrategyConfig.id == session.get("strategy_config_id"),
-                )
-                .first()
-            )
-            if not strategy_config:
-                yield log("Strategy config not found for bot session.")
-                return
+            yield event(json.dumps({
+                "type": "run_status", "run_id": current.id, "state": current.state,
+                "state_version": current.state_version,
+                "last_heartbeat_at": current.last_heartbeat_at.isoformat() + "Z" if current.last_heartbeat_at else None,
+                "updated_at": current.updated_at.isoformat() + "Z",
+                "fresh": bool(
+                    current.last_heartbeat_at
+                    and utc_now() - as_utc(current.last_heartbeat_at) < timedelta(seconds=60)
+                ),
+                "failure_code": current.failure_code,
+                "simulation": True, "live": False,
+            }))
         finally:
-            db.close()
-
-        yield log(
-            f"Rules: BUY below {session_state['buy_threshold']} | "
-            f"SELL above {session_state['sell_threshold']}"
-        )
-
-        while True:
-            session_state = get_bot_state(session["user_id"])
-            if session_state.get("stop"):
-                yield log("Bot stop requested. Exiting loop.")
-                break
-
-            buy_threshold = session_state.get("buy_threshold", buy_threshold)
-            sell_threshold = session_state.get("sell_threshold", sell_threshold)
-            auto_trade = session_state.get("auto_trade", auto_trade)
-            quantity = session_state.get("quantity", quantity)
-            interval_seconds = session_state.get("interval_seconds", interval_seconds)
-            bar_interval_minutes = session_state.get("bar_interval_minutes", bar_interval_minutes)
-            try:
-                yield log(f"Fetching data at {datetime.now()}")
-                bar_interval = bar_interval_minutes if bar_interval_minutes in (1, 3) else 1
-                df = fetch_price_data(adapter=adapter, symbol=symbol, interval_minutes=bar_interval)
-
-                if df is None or df.empty:
-                    yield log("No data returned.")
-                    async for msg in wait_interval():
-                        yield msg
-                    continue
-
-                indicators = compute_indicators(df)
-                required_cols = ["rsi", "ma_fast", "ma_slow"]
-                if not all(col in indicators.columns for col in required_cols):
-                    missing = set(required_cols) - set(indicators.columns)
-                    raise Exception(f"Missing indicator columns in DataFrame: {missing}")
-
-                signal_db = database.SessionLocal()
-                try:
-                    strategy_config = (
-                        signal_db.query(models.StrategyConfig)
-                        .filter(
-                            models.StrategyConfig.user_id == session["user_id"],
-                            models.StrategyConfig.id == session.get("strategy_config_id"),
-                        )
-                        .first()
-                    )
-                    if not strategy_config:
-                        yield log("Strategy config not found for bot session.")
-                        break
-                    signal_record = record_strategy_signal(signal_db, config=strategy_config, indicators=indicators)
-                    signal = signal_record.signal
-                finally:
-                    signal_db.close()
-                yield log(f"Latest Close: {df['close'].iloc[-1]:.2f} | Signal: {signal}")
-
-                if signal in {"BUY", "SELL"} and signal_record.status == "emitted":
-                    yield log(f"{signal} signal detected.")
-                    signal_time = indicators.index[-1].isoformat()
-                    idempotency_key = f"bot:{session_id}:{symbol}:{signal}:{signal_time}"
-                    if auto_trade:
-                        intent = build_order_intent(
-                            user_id=session["user_id"],
-                            symbol=symbol,
-                            side=signal,
-                            quantity=quantity,
-                            trading_mode=session_state.get("trading_mode", "paper"),
-                            integration_id=integration.id if integration else None,
-                            account_id=context.account_id,
-                            idempotency_key=idempotency_key,
-                            source="bot",
-                            reference_price=float(df["close"].iloc[-1]),
-                        )
-                        order_db = database.SessionLocal()
-                        try:
-                            response = execute_paper_order(order_db, intent)
-                            mark_signal_executed(
-                                order_db,
-                                signal_id=signal_record.id,
-                                paper_order_id=response["order"]["id"],
-                            )
-                        finally:
-                            order_db.close()
-                        yield log(f"Paper trade response: {response}")
-                        log_trade(
-                            symbol,
-                            signal,
-                            quantity,
-                            df["close"].iloc[-1],
-                            "PAPER",
-                            str(response),
-                        )
-                    else:
-                        prompt = {
-                            "type": "prompt",
-                            "side": signal,
-                            "price": df["close"].iloc[-1],
-                            "symbol": symbol,
-                            "quantity": quantity,
-                            "idempotency_key": idempotency_key,
-                        }
-                        yield log(json.dumps(prompt))
-                else:
-                    if signal_record.status == "suppressed":
-                        yield log(f"Strategy signal suppressed: {signal_record.reason}")
-                    else:
-                        yield log("No trade signal at this time.")
-
-            except Exception as exc:
-                yield log(f"Error during bot loop: {exc}")
-
-            async for msg in wait_interval():
-                yield msg
+            status_db.close()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

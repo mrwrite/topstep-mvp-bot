@@ -58,6 +58,13 @@ async def receive_signal(
     signal: TradingSignal,
     db: Session = Depends(database.get_db),
 ):
+    # Compatibility fixture only. Hosted beta has no approved webhook signal
+    # provider and must not perform a global integration lookup by opaque ID.
+    if database.APP_CONFIG.app_env != "test":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Signal endpoint not available.",
+        )
     if not signal.signal_integration_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

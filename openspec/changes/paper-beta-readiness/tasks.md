@@ -115,23 +115,23 @@
 
 ## Phase 6: Subscription Readiness
 
-- [ ] 6.1 [P1] Define Stripe-ready billing architecture without enabling billing.
+- [x] 6.1 [P1] Define Stripe-ready billing architecture without enabling billing.
   - Why it matters for beta readiness: future paid plans should not require rewriting auth, beta access, and entitlements.
   - Acceptance criteria: design records/models reserve Stripe customer/subscription mapping fields; no checkout or payment collection is enabled in beta.
   - Tests required: beta user access without Stripe customer, billing disabled route, no external Stripe call in beta tests.
-- [ ] 6.2 [P1] Add plan tier catalog.
+- [x] 6.2 [P1] Add plan tier catalog.
   - Why it matters for beta readiness: product packaging should be explicit before analytics and entitlement decisions are implemented.
   - Acceptance criteria: catalog supports beta, basic paper, advanced paper, and future live-ready tiers with feature lists, status, and display metadata.
   - Tests required: plan list, inactive/future tier visibility, admin-only mutation if implemented, no billing required.
-- [ ] 6.3 [P0] Add server-side entitlement model.
+- [x] 6.3 [P0] Add server-side entitlement model.
   - Why it matters for beta readiness: feature access must be enforceable and auditable, not client-side only.
   - Acceptance criteria: entitlement checks return allow/deny with reason codes; beta invite grants beta paper entitlements; missing/suspended beta status denies gated features.
   - Tests required: allowed beta entitlement, denied no entitlement, suspended user, cross-user isolation, route gate integration.
-- [ ] 6.4 [P1] Add frontend feature gating surface.
+- [x] 6.4 [P1] Add frontend feature gating surface.
   - Why it matters for beta readiness: users need clear explanations when features are unavailable during beta.
   - Acceptance criteria: UI consumes backend entitlement status, disables unavailable beta features, explains billing unavailable, and never presents live trading as available.
   - Tests required: entitled UI, denied UI, billing unavailable UI, live-disabled copy test, responsive smoke test.
-- [ ] 6.5 [P0] Ensure entitlements cannot bypass trading safety.
+- [x] 6.5 [P0] Ensure entitlements cannot bypass trading safety.
   - Why it matters for beta readiness: subscription architecture must not accidentally weaken live-disabled or risk-control guarantees.
   - Acceptance criteria: any entitlement state still fails live requests through existing live-disabled gates; risk, kill switch, context, and provider capability blockers remain authoritative.
   - Tests required: entitled user live request blocked, entitled user kill switch blocked, entitled user missing context blocked, provider capability blocked.

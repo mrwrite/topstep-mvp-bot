@@ -7,10 +7,26 @@ from alembic import context
 
 
 from app.models import Base  # Import your models here to ensure they are registered
+from app.app_config import load_config
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+
+def migration_url(runtime_url: str) -> str:
+    """Alembic uses a synchronous driver even when runtime config is async."""
+    replacements = {
+        "postgresql+asyncpg://": "postgresql+psycopg2://",
+        "sqlite+aiosqlite://": "sqlite://",
+    }
+    for source, target in replacements.items():
+        if runtime_url.startswith(source):
+            return runtime_url.replace(source, target, 1)
+    return runtime_url
+
+
+config.set_main_option("sqlalchemy.url", migration_url(load_config().database_url).replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

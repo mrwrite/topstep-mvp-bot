@@ -8,8 +8,17 @@ from sqlalchemy.orm import Session
 
 from . import beta_access_service, database, models, onboarding_service
 from .auth_routes import get_current_user_model
+from .authorization import require_operator_user as require_admin_user
+from .tenant_repository import TenantRepository, TenantScopeError
 
 router = APIRouter()
+
+
+def _repository(db: Session) -> TenantRepository:
+    context = db.info.get("tenant_context")
+    if context is None:
+        raise TenantScopeError("validated_tenant_required")
+    return TenantRepository(db, context)
 
 
 class MilestoneRequest(BaseModel):
@@ -29,12 +38,6 @@ class SupportRequestCreate(BaseModel):
 
 class SupportRequestUpdate(BaseModel):
     status: str = Field(..., min_length=2, max_length=40)
-
-
-def require_admin_user(current_user: models.User = Depends(get_current_user_model)) -> models.User:
-    if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    return current_user
 
 
 def _assert_beta_gate(db: Session, user: models.User) -> None:
@@ -114,12 +117,8 @@ def list_support_requests(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    records = (
-        db.query(models.SupportRequest)
-        .filter(models.SupportRequest.user_id == current_user.id)
-        .order_by(models.SupportRequest.created_at.desc())
-        .limit(50)
-        .all()
+    records = _repository(db).list(
+        models.SupportRequest, order_by=(models.SupportRequest.created_at.desc(),), limit=50
     )
     return {"support_requests": [onboarding_service.serialize_support_request(record) for record in records]}
 
@@ -129,11 +128,8 @@ def admin_list_support_requests(
     admin_user: models.User = Depends(require_admin_user),
     db: Session = Depends(database.get_db),
 ):
-    records = (
-        db.query(models.SupportRequest)
-        .order_by(models.SupportRequest.created_at.desc())
-        .limit(100)
-        .all()
+    records = _repository(db).list(
+        models.SupportRequest, order_by=(models.SupportRequest.created_at.desc(),), limit=100
     )
     return {"support_requests": [onboarding_service.serialize_support_request(record) for record in records]}
 
@@ -147,7 +143,7 @@ def admin_update_support_request(
 ):
     if request.status not in {"open", "in_progress", "resolved", "closed"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported support request status.")
-    record = db.query(models.SupportRequest).filter(models.SupportRequest.id == support_request_id).first()
+    record = _repository(db).get(models.SupportRequest, support_request_id)
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support request not found.")
     record.status = request.status

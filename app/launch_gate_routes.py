@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
+from app.authorization import TenantContext
+from app.tenant_repository import TenantRepository
 from app.launch_gate_service import launch_gate_service, serialize_acknowledgement, serialize_launch_gate_evaluation
 
 
@@ -22,12 +24,12 @@ class AcknowledgementRequest(BaseModel):
     confirm_live_trading_still_disabled: bool
 
 
-def _owned_integration(db: Session, *, user_id: int, integration_id: int) -> models.PlatformIntegration:
-    integration = (
-        db.query(models.PlatformIntegration)
-        .filter(models.PlatformIntegration.id == integration_id, models.PlatformIntegration.user_id == user_id)
-        .first()
-    )
+def _repository(db: Session, user: models.User) -> TenantRepository:
+    return TenantRepository(db, TenantContext(user.id, user.username, actor_user_id=user.id, source="session"))
+
+
+def _owned_integration(repository: TenantRepository, *, integration_id: int) -> models.PlatformIntegration:
+    integration = repository.get(models.PlatformIntegration, integration_id)
     if not integration:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found.")
     return integration
@@ -55,12 +57,9 @@ def list_launch_gate_evaluations(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    evaluations = (
-        db.query(models.LaunchGateEvaluation)
-        .filter(models.LaunchGateEvaluation.user_id == current_user.id)
-        .order_by(models.LaunchGateEvaluation.created_at.desc())
-        .limit(100)
-        .all()
+    evaluations = _repository(db, current_user).list(
+        models.LaunchGateEvaluation,
+        order_by=(models.LaunchGateEvaluation.created_at.desc(),), limit=100,
     )
     return [serialize_launch_gate_evaluation(evaluation) for evaluation in evaluations]
 
@@ -71,7 +70,8 @@ def create_acknowledgement(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    _owned_integration(db, user_id=current_user.id, integration_id=request.integration_id)
+    repository = _repository(db, current_user)
+    _owned_integration(repository, integration_id=request.integration_id)
     if not (
         request.confirm_no_profit_guarantee
         and request.confirm_user_responsibility
@@ -83,27 +83,21 @@ def create_acknowledgement(
         )
     risk_settings_id = request.risk_settings_id
     if risk_settings_id is None:
-        settings = (
-            db.query(models.RiskSettings)
-            .filter(
+        settings_rows = repository.list(
+                models.RiskSettings,
                 models.RiskSettings.user_id == current_user.id,
                 models.RiskSettings.integration_id == request.integration_id,
                 models.RiskSettings.account_id == request.account_id,
                 models.RiskSettings.trading_mode == "paper",
                 models.RiskSettings.enabled == 1,
-            )
-            .order_by(models.RiskSettings.id.desc())
-            .first()
+                order_by=(models.RiskSettings.id.desc(),), limit=1,
         )
+        settings = settings_rows[0] if settings_rows else None
         if not settings:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Risk settings are required before acknowledgement.")
         risk_settings_id = settings.id
     else:
-        settings = (
-            db.query(models.RiskSettings)
-            .filter(models.RiskSettings.id == risk_settings_id, models.RiskSettings.user_id == current_user.id)
-            .first()
-        )
+        settings = repository.get(models.RiskSettings, risk_settings_id)
         if not settings:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk settings not found.")
 
@@ -129,11 +123,8 @@ def list_acknowledgements(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    acknowledgements = (
-        db.query(models.LiveReadinessAcknowledgement)
-        .filter(models.LiveReadinessAcknowledgement.user_id == current_user.id)
-        .order_by(models.LiveReadinessAcknowledgement.accepted_at.desc())
-        .limit(100)
-        .all()
+    acknowledgements = _repository(db, current_user).list(
+        models.LiveReadinessAcknowledgement,
+        order_by=(models.LiveReadinessAcknowledgement.accepted_at.desc(),), limit=100,
     )
     return [serialize_acknowledgement(ack) for ack in acknowledgements]

@@ -8,21 +8,24 @@ from sqlalchemy.orm import Session
 
 from app import analytics_service, database, models
 from app.auth_routes import get_current_user_model
+from app.authorization import require_operator_user as require_admin_user
+from app.tenant_repository import TenantRepository, TenantScopeError, operator_aggregate_scope
 
 
 router = APIRouter()
+
+
+def _repository(db: Session) -> TenantRepository:
+    context = db.info.get("tenant_context")
+    if context is None:
+        raise TenantScopeError("validated_tenant_required")
+    return TenantRepository(db, context)
 
 
 class AnalyticsEventCreate(BaseModel):
     event_name: str = Field(..., min_length=2, max_length=120)
     metadata: dict[str, Any] | None = None
     source: str = Field(default="frontend", max_length=80)
-
-
-def require_admin_user(current_user: models.User = Depends(get_current_user_model)) -> models.User:
-    if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    return current_user
 
 
 @router.get("/status")
@@ -74,12 +77,11 @@ def admin_list_events(
     db: Session = Depends(database.get_db),
 ):
     start_dt, end_dt = _window(start, end)
-    events = (
-        db.query(models.AnalyticsEvent)
-        .filter(models.AnalyticsEvent.created_at >= start_dt, models.AnalyticsEvent.created_at <= end_dt)
-        .order_by(models.AnalyticsEvent.created_at.desc())
-        .limit(100)
-        .all()
+    events = _repository(db).list(
+        models.AnalyticsEvent,
+        models.AnalyticsEvent.created_at >= start_dt,
+        models.AnalyticsEvent.created_at <= end_dt,
+        order_by=(models.AnalyticsEvent.created_at.desc(),), limit=100,
     )
     return {
         "events": [analytics_service.serialize_event(event) for event in events],
@@ -95,7 +97,8 @@ def admin_onboarding_funnel(
     db: Session = Depends(database.get_db),
 ):
     start_dt, end_dt = _window(start, end)
-    return analytics_service.onboarding_funnel(db, start=start_dt, end=end_dt)
+    with operator_aggregate_scope(db, "analytics-aggregate"):
+        return analytics_service.onboarding_funnel(db, start=start_dt, end=end_dt)
 
 
 @router.get("/admin/activation-retention")
@@ -106,7 +109,8 @@ def admin_activation_retention(
     db: Session = Depends(database.get_db),
 ):
     start_dt, end_dt = _window(start, end)
-    return analytics_service.activation_retention(db, start=start_dt, end=end_dt)
+    with operator_aggregate_scope(db, "analytics-aggregate"):
+        return analytics_service.activation_retention(db, start=start_dt, end=end_dt)
 
 
 @router.get("/admin/engagement")
@@ -117,7 +121,8 @@ def admin_engagement(
     db: Session = Depends(database.get_db),
 ):
     start_dt, end_dt = _window(start, end)
-    return analytics_service.engagement_metrics(db, start=start_dt, end=end_dt)
+    with operator_aggregate_scope(db, "analytics-aggregate"):
+        return analytics_service.engagement_metrics(db, start=start_dt, end=end_dt)
 
 
 @router.get("/admin/summary")
@@ -128,4 +133,5 @@ def admin_summary(
     db: Session = Depends(database.get_db),
 ):
     start_dt, end_dt = _window(start, end)
-    return analytics_service.analytics_summary(db, start=start_dt, end=end_dt)
+    with operator_aggregate_scope(db, "analytics-aggregate"):
+        return analytics_service.analytics_summary(db, start=start_dt, end=end_dt)

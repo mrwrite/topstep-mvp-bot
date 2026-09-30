@@ -7,7 +7,8 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
 
-from app import database
+from app import database, models
+from app.crypto import key_management_health
 from app.providers.types import IMPLEMENTED_PROVIDER_CAPABILITIES, ROADMAP_PROVIDER_CAPABILITIES
 
 
@@ -76,6 +77,21 @@ def _readiness_checklist(migration_state: dict | None = None) -> list[dict]:
     ]
 
 
+def _key_operation_state() -> dict:
+    try:
+        with database.SessionLocal() as db:
+            operation = (db.query(models.KeyManagementOperation)
+                         .order_by(models.KeyManagementOperation.created_at.desc()).first())
+    except Exception:
+        return {"rotation_state": "unavailable", "migration_state": "unavailable"}
+    if operation is None:
+        return {"rotation_state": "idle", "migration_state": "not-started"}
+    key = "migration_state" if operation.operation_type == "fernet-migration" else "rotation_state"
+    result = {"rotation_state": "idle", "migration_state": "not-started"}
+    result[key] = operation.state
+    return result
+
+
 @router.get("/health/live")
 def live():
     return {
@@ -92,6 +108,8 @@ def ready():
         "config": {"status": "ok", "environment": database.APP_CONFIG.app_env},
         "migrations": {"status": "unknown"},
         "live_trading": {"status": "disabled"},
+        "key_management": {"status": "unknown"},
+        "hosted_security_epoch": {"status": "not_applicable"},
     }
     http_status = status.HTTP_200_OK
     try:
@@ -103,12 +121,47 @@ def ready():
         http_status = status.HTTP_503_SERVICE_UNAVAILABLE
 
     try:
+        key_health = key_management_health()
+        key_health.update(_key_operation_state())
+        checks["key_management"] = {
+            "status": "ok" if key_health["available"] else "error",
+            **key_health,
+        }
+        if database.APP_CONFIG.is_production and not key_health["available"]:
+            http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    except Exception:
+        checks["key_management"] = {"status": "error", "classification": "failed"}
+        if database.APP_CONFIG.is_production:
+            http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    try:
         checks["migrations"] = _migration_state()
         if checks["migrations"]["status"] == "error":
             http_status = status.HTTP_503_SERVICE_UNAVAILABLE
     except Exception as exc:
         checks["migrations"] = {"status": "error", "message": str(exc)}
         http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    if database.APP_CONFIG.deployment_profile == "hosted_topstep_combine_beta":
+        try:
+            from .topstep_session_security import security_epoch_status
+            db = database.SessionLocal()
+            try:
+                epoch = security_epoch_status(db)
+            finally:
+                db.close()
+            checks["hosted_security_epoch"] = {
+                "status": "ok" if epoch.ready else "error",
+                "classification": epoch.state,
+                "environment_epoch": epoch.environment_epoch,
+                "database_epoch": epoch.database_epoch,
+                "restore_reconciliation_required": not epoch.ready,
+            }
+            if not epoch.ready:
+                http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        except Exception:
+            checks["hosted_security_epoch"] = {"status": "error", "classification": "failed"}
+            http_status = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return JSONResponse(
         status_code=http_status,

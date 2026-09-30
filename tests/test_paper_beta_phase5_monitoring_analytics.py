@@ -43,7 +43,9 @@ def login_user(username: str, password: str = "StrongPass1") -> str:
 
 
 def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "user-agent": "pytest-browser analytics-suite"}
+    return {"Authorization": f"Bearer {token}", "user-agent": "pytest-browser analytics-suite",
+            "X-Operator-Reason": "Automated authorization verification",
+            "X-Operator-Case-ID": "TEST-ANALYTICS", "X-Operator-Target-User": "1"}
 
 
 def create_user(username: str, *, admin: bool = False) -> str:

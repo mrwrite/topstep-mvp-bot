@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -18,11 +18,11 @@ def get_session_token():
     return "mocked-session-token"
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=False)
 
 SECRET_KEY = database.APP_CONFIG.secret_key
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = database.APP_CONFIG.session_lifetime_minutes
 EMAIL_VERIFICATION_EXPIRE_HOURS = 24
 PASSWORD_RESET_EXPIRE_MINUTES = 30
 EMAIL_RESEND_COOLDOWN_SECONDS = 60
@@ -151,15 +151,77 @@ def _serialize_session(session: models.UserSession) -> dict:
     }
 
 
-def _assert_session_active(db: Session, payload: dict) -> None:
+def _authenticated_repository(db: Session, user: models.User):
+    from .authorization import TenantContext
+    from .tenant_repository import TenantRepository
+
+    return TenantRepository(
+        db, TenantContext(user.id, user.username, actor_user_id=user.id, source="session")
+    )
+
+
+def _assert_session_active(db: Session, payload: dict) -> models.UserSession:
     session_id = payload.get("sid")
     if not session_id:
-        return
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session identifier is required")
     session = db.query(models.UserSession).filter(models.UserSession.session_id == session_id).first()
     if not session or session.revoked_at is not None or session.expires_at <= datetime.utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session revoked or expired")
     session.last_seen_at = datetime.utcnow()
     db.commit()
+    return session
+
+
+def _request_token(request: Request, bearer_token: str | None) -> tuple[str, bool]:
+    if bearer_token:
+        return bearer_token, False
+    cookie_token = request.cookies.get(database.APP_CONFIG.session_cookie_name)
+    if cookie_token:
+        return cookie_token, True
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+
+def _enforce_csrf(request: Request, session: models.UserSession, cookie_authenticated: bool) -> None:
+    if not cookie_authenticated or request.method.upper() in {"GET", "HEAD", "OPTIONS"}:
+        return
+    header_token = request.headers.get("X-CSRF-Token")
+    cookie_token = request.cookies.get(database.APP_CONFIG.csrf_cookie_name)
+    if (
+        not header_token
+        or not cookie_token
+        or not secrets.compare_digest(header_token, cookie_token)
+        or not session.csrf_token_hash
+        or not secrets.compare_digest(_hash_value(header_token), session.csrf_token_hash)
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+
+
+def _set_session_cookies(response: Response, token: str, csrf_token: str) -> None:
+    secure = database.APP_CONFIG.is_production
+    max_age = database.APP_CONFIG.session_lifetime_minutes * 60
+    response.set_cookie(
+        database.APP_CONFIG.session_cookie_name,
+        token,
+        max_age=max_age,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        database.APP_CONFIG.csrf_cookie_name,
+        csrf_token,
+        max_age=max_age,
+        httponly=False,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_session_cookies(response: Response) -> None:
+    response.delete_cookie(database.APP_CONFIG.session_cookie_name, path="/")
+    response.delete_cookie(database.APP_CONFIG.csrf_cookie_name, path="/")
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -210,6 +272,7 @@ def register(user: models.UserCreate, db: Session = Depends(database.get_db)):
 @router.post("/token")
 def login(
     request: Request,
+    response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(database.get_db),
 ):
@@ -219,6 +282,7 @@ def login(
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     expires_at = datetime.utcnow() + access_token_expires
     session_id = uuid4().hex
+    csrf_token = secrets.token_urlsafe(32)
     db.add(
         models.UserSession(
             user_id=user.id,
@@ -226,12 +290,14 @@ def login(
             user_agent_summary=_user_agent_summary(request),
             ip_hash=_ip_hash(request),
             expires_at=expires_at,
+            csrf_token_hash=_hash_value(csrf_token),
         )
     )
     db.commit()
     token = create_access_token(
         data={"sub": user.username, "sid": session_id}, expires_delta=access_token_expires
     )
+    _set_session_cookies(response, token, csrf_token)
     return {"access_token": token, "token_type": "bearer"}
 
 # Dependency to get current user
@@ -252,25 +318,64 @@ def decode_jwt_token(token: str):
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(database.get_db),
 ):
-    payload = decode_jwt_payload(token)
-    _assert_session_active(db, payload)
-    return payload.get("sub")
+    resolved_token, cookie_authenticated = _request_token(request, token)
+    payload = decode_jwt_payload(resolved_token)
+    session = _assert_session_active(db, payload)
+    _enforce_csrf(request, session, cookie_authenticated)
+    username = payload.get("sub")
+    user = get_user_by_username(db, username)
+    if not user or getattr(user, "account_status", "active") != "active":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    _bind_authenticated_context(request, db, user, session)
+    return username
 
 
 def get_current_user_model(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(database.get_db),
 ):
-    payload = decode_jwt_payload(token)
-    _assert_session_active(db, payload)
+    resolved_token, cookie_authenticated = _request_token(request, token)
+    payload = decode_jwt_payload(resolved_token)
+    session = _assert_session_active(db, payload)
+    _enforce_csrf(request, session, cookie_authenticated)
     username = payload.get("sub")
     user = get_user_by_username(db, username)
-    if not user:
+    if not user or getattr(user, "account_status", "active") != "active":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    _bind_authenticated_context(request, db, user, session)
     return user
+
+
+def _bind_authenticated_context(
+    request: Request,
+    db: Session,
+    user: models.User,
+    session: models.UserSession,
+) -> None:
+    """Construct tenant authority only after JWT, session, CSRF, and user validation."""
+    from .authorization import TenantContext
+    from .tenant_repository import bind_tenant_context
+    from .time_utils import as_utc, utc_now
+
+    context = TenantContext(
+        user_id=user.id,
+        username=user.username,
+        actor_user_id=user.id,
+        session_id=session.session_id,
+        roles=("operator",) if user.is_admin else ("user",),
+        source="session",
+        request_id=request.headers.get("X-Request-ID"),
+        created_at=utc_now(),
+        expires_at=as_utc(session.expires_at),
+        integrity_verified=True,
+    )
+    bind_tenant_context(db, context)
+    request.state.tenant_context = context
 
 
 @router.get("/me")
@@ -326,12 +431,11 @@ def verify_email(request: TokenRequest, db: Session = Depends(database.get_db)):
 def resend_verification(current_user: models.User = Depends(get_current_user_model), db: Session = Depends(database.get_db)):
     if current_user.email_verified_at is not None:
         return {"status": "already_verified"}
-    latest = (
-        db.query(models.EmailVerificationToken)
-        .filter(models.EmailVerificationToken.user_id == current_user.id)
-        .order_by(models.EmailVerificationToken.created_at.desc())
-        .first()
+    latest_rows = _authenticated_repository(db, current_user).list(
+        models.EmailVerificationToken,
+        order_by=(models.EmailVerificationToken.created_at.desc(),), limit=1,
     )
+    latest = latest_rows[0] if latest_rows else None
     now = datetime.utcnow()
     if latest and latest.last_sent_at and (now - latest.last_sent_at).total_seconds() < EMAIL_RESEND_COOLDOWN_SECONDS:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Verification email was sent recently.")
@@ -401,12 +505,9 @@ def list_account_recovery_requests(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    records = (
-        db.query(models.AccountRecoveryRequest)
-        .filter(models.AccountRecoveryRequest.user_id == current_user.id)
-        .order_by(models.AccountRecoveryRequest.created_at.desc())
-        .limit(50)
-        .all()
+    records = _authenticated_repository(db, current_user).list(
+        models.AccountRecoveryRequest,
+        order_by=(models.AccountRecoveryRequest.created_at.desc(),), limit=50,
     )
     return [
         {
@@ -443,14 +544,70 @@ def update_profile(
 
 @router.get("/sessions")
 def list_sessions(current_user: models.User = Depends(get_current_user_model), db: Session = Depends(database.get_db)):
-    sessions = (
-        db.query(models.UserSession)
-        .filter(models.UserSession.user_id == current_user.id)
-        .order_by(models.UserSession.created_at.desc())
-        .limit(100)
-        .all()
+    sessions = _authenticated_repository(db, current_user).list(
+        models.UserSession, order_by=(models.UserSession.created_at.desc(),), limit=100
     )
     return [_serialize_session(session) for session in sessions]
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    response: Response,
+    token: str | None = Depends(oauth2_scheme),
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+):
+    resolved_token, _ = _request_token(request, token)
+    payload = decode_jwt_payload(resolved_token)
+    session = _authenticated_repository(db, current_user).first(
+        models.UserSession, models.UserSession.session_id == payload.get("sid")
+    )
+    if session and session.revoked_at is None:
+        session.revoked_at = datetime.utcnow()
+        session.revocation_reason = "logout"
+        db.commit()
+    _clear_session_cookies(response)
+    return {"status": "logged_out"}
+
+
+@router.post("/sessions/rotate")
+def rotate_session(
+    request: Request,
+    response: Response,
+    token: str | None = Depends(oauth2_scheme),
+    current_user: models.User = Depends(get_current_user_model),
+    db: Session = Depends(database.get_db),
+):
+    old_token, _ = _request_token(request, token)
+    old_payload = decode_jwt_payload(old_token)
+    repository = _authenticated_repository(db, current_user)
+    old_session = repository.first(models.UserSession, models.UserSession.session_id == old_payload.get("sid"))
+    if not old_session:
+        raise HTTPException(status_code=401, detail="Session not found")
+    now = datetime.utcnow()
+    old_session.revoked_at = now
+    old_session.revocation_reason = "rotated"
+    session_id = uuid4().hex
+    csrf_token = secrets.token_urlsafe(32)
+    expires_at = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    repository.add(
+        models.UserSession(
+            user_id=current_user.id,
+            session_id=session_id,
+            user_agent_summary=_user_agent_summary(request),
+            ip_hash=_ip_hash(request),
+            expires_at=expires_at,
+            csrf_token_hash=_hash_value(csrf_token),
+        )
+    )
+    db.commit()
+    new_token = create_access_token(
+        {"sub": current_user.username, "sid": session_id},
+        timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    _set_session_cookies(response, new_token, csrf_token)
+    return {"status": "rotated"}
 
 
 @router.post("/sessions/{session_id}/revoke")
@@ -459,10 +616,8 @@ def revoke_session(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    session = (
-        db.query(models.UserSession)
-        .filter(models.UserSession.session_id == session_id, models.UserSession.user_id == current_user.id)
-        .first()
+    session = _authenticated_repository(db, current_user).first(
+        models.UserSession, models.UserSession.session_id == session_id
     )
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -18,6 +19,22 @@ class IntegrationCapability(str, Enum):
     SIGNALS = "SIGNALS"
     ACCOUNT_INFO = "ACCOUNT_INFO"
     PAPER_TRADING = "PAPER_TRADING"
+
+
+class ProviderAvailability(str, Enum):
+    SIGNAL_ONLY = "SIGNAL_ONLY"
+    ROADMAP = "ROADMAP"
+    UNSUITABLE_HOSTED_BETA = "UNSUITABLE_HOSTED_BETA"
+
+
+@dataclass(frozen=True)
+class ProviderDefinition:
+    availability: ProviderAvailability
+    enabled: bool
+    accepts_credentials: bool
+    live_trading_enabled: bool
+    summary: str
+    evidence_reviewed_at: str = "2026-07-26"
 
 
 PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {
@@ -64,6 +81,43 @@ IMPLEMENTED_PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapa
     IntegrationProvider.IBKR: set(),
     IntegrationProvider.ETX: set(),
 }
+
+
+PROVIDER_DEFINITIONS: dict[IntegrationProvider, ProviderDefinition] = {
+    IntegrationProvider.TOPSTEPX: ProviderDefinition(
+        ProviderAvailability.UNSUITABLE_HOSTED_BETA,
+        False,
+        False,
+        False,
+        "Unavailable for hosted beta; legacy code is retained for internal paper verification only.",
+    ),
+    IntegrationProvider.TRADINGVIEW: ProviderDefinition(
+        ProviderAvailability.SIGNAL_ONLY,
+        True,
+        True,
+        False,
+        "Signal webhook source only; not a general consumer market-data or broker API.",
+    ),
+    **{
+        provider: ProviderDefinition(
+            ProviderAvailability.ROADMAP,
+            False,
+            False,
+            False,
+            "Roadmap provider; credential connection is not implemented or approved.",
+        )
+        for provider in (
+            IntegrationProvider.TRADOVATE,
+            IntegrationProvider.NINJATRADER,
+            IntegrationProvider.IBKR,
+            IntegrationProvider.ETX,
+        )
+    },
+}
+
+
+def provider_definition(provider: IntegrationProvider) -> ProviderDefinition:
+    return PROVIDER_DEFINITIONS[provider]
 
 
 ROADMAP_PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {

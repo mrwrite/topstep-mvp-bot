@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app import database, models
 from app.auth_routes import get_current_user_model
+from app.authorization import TenantContext
+from app.tenant_repository import TenantRepository
 from app.reconciliation_service import (
     reconciliation_service,
     serialize_reconciliation_event,
@@ -25,14 +27,14 @@ class RetryDecisionRequest(BaseModel):
     error: str
 
 
-def _assert_integration_owned(db: Session, *, user_id: int, integration_id: int | None) -> None:
+def _repository(db: Session, user: models.User) -> TenantRepository:
+    return TenantRepository(db, TenantContext(user.id, user.username, actor_user_id=user.id, source="session"))
+
+
+def _assert_integration_owned(repository: TenantRepository, *, integration_id: int | None) -> None:
     if integration_id is None:
         return
-    integration = (
-        db.query(models.PlatformIntegration)
-        .filter(models.PlatformIntegration.id == integration_id, models.PlatformIntegration.user_id == user_id)
-        .first()
-    )
+    integration = repository.get(models.PlatformIntegration, integration_id)
     if not integration:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found.")
 
@@ -42,12 +44,9 @@ def list_reconciliation_runs(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    runs = (
-        db.query(models.ProviderReconciliationRun)
-        .filter(models.ProviderReconciliationRun.user_id == current_user.id)
-        .order_by(models.ProviderReconciliationRun.created_at.desc())
-        .limit(100)
-        .all()
+    runs = _repository(db, current_user).list(
+        models.ProviderReconciliationRun,
+        order_by=(models.ProviderReconciliationRun.created_at.desc(),), limit=100,
     )
     return [serialize_reconciliation_run(run) for run in runs]
 
@@ -58,18 +57,14 @@ def list_reconciliation_events(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    run = (
-        db.query(models.ProviderReconciliationRun)
-        .filter(models.ProviderReconciliationRun.id == run_id, models.ProviderReconciliationRun.user_id == current_user.id)
-        .first()
-    )
+    repository = _repository(db, current_user)
+    run = repository.get(models.ProviderReconciliationRun, run_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reconciliation run not found.")
-    events = (
-        db.query(models.ProviderReconciliationEvent)
-        .filter(models.ProviderReconciliationEvent.run_id == run.id)
-        .order_by(models.ProviderReconciliationEvent.created_at.asc())
-        .all()
+    events = repository.list(
+        models.ProviderReconciliationEvent,
+        models.ProviderReconciliationEvent.run_id == run.id,
+        order_by=(models.ProviderReconciliationEvent.created_at.asc(),),
     )
     return [serialize_reconciliation_event(event) for event in events]
 
@@ -79,12 +74,9 @@ def list_retry_decisions(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    decisions = (
-        db.query(models.ProviderRetryDecision)
-        .filter(models.ProviderRetryDecision.user_id == current_user.id)
-        .order_by(models.ProviderRetryDecision.created_at.desc())
-        .limit(100)
-        .all()
+    decisions = _repository(db, current_user).list(
+        models.ProviderRetryDecision,
+        order_by=(models.ProviderRetryDecision.created_at.desc(),), limit=100,
     )
     return [serialize_retry_decision(decision) for decision in decisions]
 
@@ -95,7 +87,7 @@ def create_retry_decision(
     current_user: models.User = Depends(get_current_user_model),
     db: Session = Depends(database.get_db),
 ):
-    _assert_integration_owned(db, user_id=current_user.id, integration_id=request.integration_id)
+    _assert_integration_owned(_repository(db, current_user), integration_id=request.integration_id)
     decision = reconciliation_service.create_retry_decision(
         db,
         user_id=current_user.id,

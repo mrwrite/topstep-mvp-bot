@@ -59,7 +59,7 @@ def login_user(username: str) -> str:
 
 
 def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token}", "X-Internal-Paper-Fixture": "true"}
 
 
 def create_integration(token: str, provider: str = "TOPSTEPX", metadata: dict | None = None):

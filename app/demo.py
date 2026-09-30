@@ -230,16 +230,19 @@ def seed_demo_package(
             "contracts": DEMO_CONTRACTS,
             "live_trading_enabled": False,
         },
-        credentials_encrypted=encrypt_credentials(
-            {
-                "userName": "demo-paper-user",
-                "apiKey": "demo-paper-key-not-live",
-                "baseUrl": "https://demo.invalid",
-            }
-        ),
+        credentials_encrypted=None,
     )
     db.add(integration)
     db.flush()
+    integration.credentials_encrypted = encrypt_credentials(
+        {
+            "userName": "demo-paper-user",
+            "apiKey": "demo-paper-key-not-live",
+            "baseUrl": "https://demo.invalid",
+        },
+        user_id=current_user.id,
+        record_id=integration.id,
+    )
 
     current_user.active_integration_id = integration.id
     db.flush()

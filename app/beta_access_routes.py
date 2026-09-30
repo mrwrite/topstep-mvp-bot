@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 
 from . import beta_access_service, database, models
 from .auth_routes import get_current_user_model
+from .authorization import require_operator_user as require_admin_user
+from .tenant_repository import OperatorRepository, operator_global_scope
+from .time_utils import utc_now
 
 router = APIRouter()
 
@@ -38,12 +41,6 @@ class WaitlistRequest(BaseModel):
 
 class SuspendRequest(BaseModel):
     reason: str = Field(..., min_length=3, max_length=2000)
-
-
-def require_admin_user(current_user: models.User = Depends(get_current_user_model)) -> models.User:
-    if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
-    return current_user
 
 
 def require_current_beta_access(
@@ -155,7 +152,9 @@ def list_invites(
     admin_user: models.User = Depends(require_admin_user),
     db: Session = Depends(database.get_db),
 ):
-    invites = db.query(models.BetaInviteCode).order_by(models.BetaInviteCode.created_at.desc()).limit(100).all()
+    invites = OperatorRepository(db).global_list(
+        models.BetaInviteCode, order_by=(models.BetaInviteCode.created_at.desc(),), limit=100
+    )
     return {"invites": [beta_access_service.serialize_invite(invite) for invite in invites]}
 
 
@@ -165,13 +164,11 @@ def disable_invite(
     admin_user: models.User = Depends(require_admin_user),
     db: Session = Depends(database.get_db),
 ):
-    invite = db.query(models.BetaInviteCode).filter(models.BetaInviteCode.id == invite_id).first()
+    invite = OperatorRepository(db).global_get(models.BetaInviteCode, invite_id)
     if not invite:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found.")
     invite.status = beta_access_service.INVITE_STATUS_DISABLED
-    from datetime import datetime
-
-    invite.disabled_at = datetime.utcnow()
+    invite.disabled_at = utc_now().replace(tzinfo=None)
     db.commit()
     db.refresh(invite)
     return beta_access_service.serialize_invite(invite)
@@ -182,7 +179,9 @@ def list_waitlist(
     admin_user: models.User = Depends(require_admin_user),
     db: Session = Depends(database.get_db),
 ):
-    entries = db.query(models.BetaWaitlistEntry).order_by(models.BetaWaitlistEntry.created_at.desc()).limit(100).all()
+    entries = OperatorRepository(db).global_list(
+        models.BetaWaitlistEntry, order_by=(models.BetaWaitlistEntry.created_at.desc(),), limit=100
+    )
     return {"waitlist": [beta_access_service.serialize_waitlist(entry) for entry in entries]}
 
 
@@ -192,24 +191,23 @@ def approve_waitlist_entry(
     admin_user: models.User = Depends(require_admin_user),
     db: Session = Depends(database.get_db),
 ):
-    from datetime import datetime
-
-    entry = db.query(models.BetaWaitlistEntry).filter(models.BetaWaitlistEntry.id == entry_id).first()
+    entry = OperatorRepository(db).global_get(models.BetaWaitlistEntry, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Waitlist entry not found.")
-    entry.status = "approved"
-    entry.approved_by_user_id = admin_user.id
-    entry.approved_at = datetime.utcnow()
-    if entry.user_id:
-        beta_access_service.ensure_active_beta_status(
-            db,
-            user_id=entry.user_id,
-            source="waitlist",
-            approved_by_user_id=admin_user.id,
-            reason="waitlist_approved",
-        )
-    db.commit()
-    db.refresh(entry)
+    with operator_global_scope(db, "beta-waitlist-administration"):
+        entry.status = "approved"
+        entry.approved_by_user_id = admin_user.id
+        entry.approved_at = utc_now().replace(tzinfo=None)
+        if entry.user_id:
+            beta_access_service.ensure_active_beta_status(
+                db,
+                user_id=entry.user_id,
+                source="waitlist",
+                approved_by_user_id=admin_user.id,
+                reason="waitlist_approved",
+            )
+        db.commit()
+        db.refresh(entry)
     return beta_access_service.serialize_waitlist(entry)
 
 
@@ -220,14 +218,12 @@ def suspend_user_beta_access(
     admin_user: models.User = Depends(require_admin_user),
     db: Session = Depends(database.get_db),
 ):
-    from datetime import datetime
-
     record = beta_access_service.beta_status_record(db, user_id)
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Beta status not found.")
     record.status = beta_access_service.BETA_STATUS_SUSPENDED
     record.reason = request.reason
-    record.suspended_at = datetime.utcnow()
+    record.suspended_at = utc_now().replace(tzinfo=None)
     record.updated_at = record.suspended_at
     db.commit()
     return {"status": record.status, "user_id": user_id, "live_trading_enabled": False}

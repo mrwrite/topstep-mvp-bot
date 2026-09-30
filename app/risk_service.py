@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.trading_safety import LIVE_MODE, PAPER_MODE, OrderIntent
+from app.time_utils import utc_now
 
 
 DEFAULT_MAX_QUANTITY = 1
@@ -128,9 +129,9 @@ class RiskService:
             max_open_positions=DEFAULT_MAX_OPEN_POSITIONS,
             live_trading_enabled=0,
             reset_policy="daily",
-            effective_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            effective_at=utc_now(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
         db.add(settings)
         db.flush()
@@ -176,7 +177,7 @@ class RiskService:
         settings.max_open_positions = max_open_positions
         settings.live_trading_enabled = 0
         settings.enabled = 1
-        settings.updated_at = datetime.utcnow()
+        settings.updated_at = utc_now()
         db.commit()
         db.refresh(settings)
         return settings
@@ -241,8 +242,8 @@ class RiskService:
             active=1,
             reason=reason or "User activated kill switch.",
             activated_by_user_id=actor_user_id,
-            activated_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            activated_at=utc_now(),
+            created_at=utc_now(),
         )
         db.add(kill_switch)
         db.flush()
@@ -257,8 +258,6 @@ class RiskService:
                 active=1,
             )
         )
-        db.commit()
-        db.refresh(kill_switch)
         return kill_switch
 
     def deactivate_kill_switch(
@@ -278,11 +277,11 @@ class RiskService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kill switch not found.")
         kill_switch.active = 0
         kill_switch.deactivated_by_user_id = actor_user_id
-        kill_switch.deactivated_at = datetime.utcnow()
+        kill_switch.deactivated_at = utc_now()
         (
             db.query(models.RiskLockoutEvent)
             .filter(models.RiskLockoutEvent.kill_switch_id == kill_switch.id, models.RiskLockoutEvent.active == 1)
-            .update({"active": 0, "cleared_at": datetime.utcnow()})
+            .update({"active": 0, "cleared_at": utc_now()})
         )
         db.commit()
         db.refresh(kill_switch)
@@ -311,7 +310,16 @@ class RiskService:
                 headers={"X-Readiness-Blocker": "kill_switch_active"},
             )
 
-    def evaluate_order_intent(self, db: Session, intent: OrderIntent) -> models.RiskDecision:
+    def evaluate_order_intent(
+        self,
+        db: Session,
+        intent: OrderIntent,
+        *,
+        commit_on_reject: bool = True,
+        simulation_run_id: str | None = None,
+        simulation_fencing_token: int | None = None,
+        evaluation_identity: str | None = None,
+    ) -> models.RiskDecision:
         settings = self.resolve_settings_for_intent(db, intent)
         allowed = True
         reason_code = "allowed"
@@ -413,7 +421,7 @@ class RiskService:
                 reason = f"Open position count {len(open_symbols)} meets max open positions {settings.max_open_positions}."
 
         if allowed:
-            today = datetime.utcnow().date().isoformat()
+            today = utc_now().date().isoformat()
             daily_state = _scope_filter(
                 db.query(models.DailyRiskState),
                 models.DailyRiskState,
@@ -446,11 +454,15 @@ class RiskService:
             reason_code=reason_code,
             reason=reason,
             decision_metadata=metadata,
+            simulation_run_id=simulation_run_id,
+            simulation_fencing_token=simulation_fencing_token,
+            evaluation_identity=evaluation_identity,
         )
         db.add(decision)
         db.flush()
         if not allowed:
-            db.commit()
+            if commit_on_reject:
+                db.commit()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=reason,
