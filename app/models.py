@@ -24,7 +24,12 @@ class User(Base):
 
     active_integration_id = Column(
         Integer,
-        ForeignKey("platform_integrations.id", ondelete="SET NULL"),
+        ForeignKey(
+            "platform_integrations.id",
+            name="fk_users_active_integration_id",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
         nullable=True,
     )
 

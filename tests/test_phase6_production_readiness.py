@@ -5,7 +5,7 @@ from alembic.config import Config
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, create_mock_engine, inspect, text
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
@@ -13,11 +13,29 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("CREDENTIALS_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
 from app.app_config import AppConfig, ConfigError, validate_config  # noqa: E402
+from app import models  # noqa: E402
 from app.main import app  # noqa: E402
 from app.observability import redact  # noqa: E402
 
 
 client = TestClient(app)
+
+
+def test_postgres_metadata_ddl_breaks_user_integration_foreign_key_cycle():
+    statements = []
+    engine = create_mock_engine(
+        "postgresql+psycopg2://",
+        lambda sql, *args, **kwargs: statements.append(
+            str(sql.compile(dialect=engine.dialect))
+        ),
+    )
+
+    models.Base.metadata.create_all(engine)
+    models.Base.metadata.drop_all(engine)
+
+    ddl = "\n".join(statements)
+    assert "ADD CONSTRAINT fk_users_active_integration_id" in ddl
+    assert "DROP CONSTRAINT fk_users_active_integration_id" in ddl
 
 
 def test_health_and_operational_status_are_paper_only():
