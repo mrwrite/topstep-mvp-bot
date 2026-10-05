@@ -1,0 +1,1 @@
+"""Local journal Alembic revisions."""

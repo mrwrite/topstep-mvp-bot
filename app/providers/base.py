@@ -7,7 +7,25 @@ from .types import IntegrationCapability, IntegrationProvider
 
 
 class ProviderCapabilityError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_capability_unavailable",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.details = details or {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "retryable": False,
+            "details": self.details,
+        }
 
 
 class ProviderError(RuntimeError):

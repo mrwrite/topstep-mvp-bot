@@ -11,4 +11,3 @@ requests
 python-multipart
 numpy>=2.2.6
 pandas>=2.2.3
-pandas_ta

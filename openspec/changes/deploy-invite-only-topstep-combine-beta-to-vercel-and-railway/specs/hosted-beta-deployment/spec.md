@@ -1,3 +1,5 @@
+> **Superseded execution target (2026-10-02):** Railway/Vercel remain read-only support and sanitized telemetry. Personal-device execution requirements in `add-local-topstep-combine-executor` replace any hosted provider-order acceptance described below.
+
 ## ADDED Requirements
 
 ### Requirement: Hosted service topology is split by responsibility

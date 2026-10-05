@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
-from . import auth_routes, integrations_routes, models, database, scheduler, contracts, launch_gate_routes, reconciliation_routes, risk_routes, legal_routes, beta_access_routes, onboarding_routes, analytics_routes, subscription_routes, account_lifecycle_routes, simulation_routes, topstep_onboarding_routes, hosted_combine_routes
+from . import auth_routes, integrations_routes, models, database, scheduler, contracts, launch_gate_routes, reconciliation_routes, risk_routes, legal_routes, beta_access_routes, onboarding_routes, analytics_routes, subscription_routes, account_lifecycle_routes, simulation_routes, topstep_onboarding_routes, hosted_combine_routes, device_telemetry_routes
 from . import analysis_routes
 from . import demo, crypto
 from . import health
@@ -17,6 +17,7 @@ from .trading_routes import router as trading_router
 from .app_config import default_cors_origins
 from .observability import log_event, safe_exception, setup_logging
 from .rate_limit import RateLimitStoreUnavailable, consume
+from .hosted_execution_boundary import enforce_hosted_execution_boundary
 from .simulation_worker import periodic_recovery, recovery_cycle
 
 setup_logging(database.APP_CONFIG.log_level)
@@ -27,11 +28,7 @@ if database.APP_CONFIG.allow_create_all and not database.APP_CONFIG.is_productio
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     from .providers.topstepx import TopStepXAdapter
-    if TopStepXAdapter.mutation_capabilities_enabled is not False:
-        raise RuntimeError("Topstep provider mutation capabilities must remain disabled.")
-    if (database.APP_CONFIG.deployment_profile == "hosted_topstep_combine_beta"
-            and os.getenv("PROVIDER_MUTATIONS_ENABLED", "false").strip().lower() != "false"):
-        raise RuntimeError("Hosted-beta provider mutations must remain disabled.")
+    enforce_hosted_execution_boundary(TopStepXAdapter)
     worker_allowed = True
     if database.APP_CONFIG.is_production:
         key_health = await asyncio.to_thread(crypto.key_management_health)
@@ -75,6 +72,7 @@ app.include_router(auth_routes.router, prefix="/auth", tags=["auth"])
 app.include_router(account_lifecycle_routes.router, prefix="/auth", tags=["account-lifecycle"])
 app.include_router(topstep_onboarding_routes.router, tags=["topstep-onboarding"])
 app.include_router(hosted_combine_routes.router, tags=["hosted-combine-dry-run"])
+app.include_router(device_telemetry_routes.router)
 app.include_router(integrations_routes.router, tags=["integrations"])
 app.include_router(scheduler.router, prefix="/scheduler", tags=["scheduler"])
 app.include_router(simulation_routes.router, prefix="/simulation-runs", tags=["simulation-runs"])

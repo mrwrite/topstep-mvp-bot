@@ -1,3 +1,5 @@
+> **Superseded execution target (2026-10-02):** Tasks that would give Railway custody of Topstep credentials or provider mutation authority are historical and MUST NOT be implemented. `add-local-topstep-combine-executor` owns replacement work; hosted read-only, migration, deletion, and telemetry controls remain applicable.
+
 ## 1. Release and Trust Reconciliation
 
 - [x] 1.1 Update the parent release model, design, readiness, traceability, tasks, and affected specifications for the five independent stages and Trading Combine consequences.

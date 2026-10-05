@@ -1,3 +1,5 @@
+> **Superseded execution target (2026-10-02):** Railway command ownership applies to internal simulation and read-only work only. `add-local-topstep-combine-executor` governs Topstep provider mutations on the personal device.
+
 ## ADDED Requirements
 
 ### Requirement: Provider execution remains command-owned

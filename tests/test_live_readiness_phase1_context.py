@@ -158,7 +158,7 @@ def test_context_readiness_shape_reports_stable_blocker_codes():
             integration_id=integration["id"],
             account_id="paper-account-1",
             symbol="ES",
-            required_capabilities={IntegrationCapability.BROKER_TRADING},
+            required_capabilities={IntegrationCapability.PAPER_TRADING},
             require_integration=True,
             require_account=True,
             require_contract=True,
@@ -171,7 +171,7 @@ def test_context_readiness_shape_reports_stable_blocker_codes():
                 user_id=user_id,
                 trading_mode="paper",
                 integration_id=integration["id"],
-                required_capabilities={IntegrationCapability.BROKER_TRADING},
+                required_capabilities={IntegrationCapability.PAPER_TRADING},
                 require_integration=True,
                 require_account=True,
             )
@@ -273,5 +273,5 @@ def test_trading_sensitive_routes_use_trading_context_service(monkeypatch):
     flattened = {capability for call in calls for capability in call}
     assert IntegrationCapability.MARKET_DATA in flattened
     assert IntegrationCapability.ACCOUNT_INFO in flattened
-    assert IntegrationCapability.BROKER_TRADING in flattened
+    assert IntegrationCapability.PAPER_TRADING in flattened
     assert IntegrationCapability.SIGNALS in flattened

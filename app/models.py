@@ -1545,6 +1545,66 @@ class DeletionTombstone(Base):
     status = Column(String, nullable=False, default="active")
 
 
+class DeviceTelemetryCredential(Base):
+    __tablename__ = "device_telemetry_credentials"
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    installation_hash = Column(String(64), nullable=False)
+    credential_hash = Column(String(64), nullable=False, unique=True)
+    active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("user_id", "installation_hash", name="uq_device_telemetry_installation"),
+        UniqueConstraint("user_id", "id", name="uq_device_telemetry_credential_tenant"),
+        CheckConstraint("active IN (0,1)", name="ck_device_telemetry_credential_active"),
+    )
+
+
+class DeviceTelemetryEvent(Base):
+    """Append-only, non-authoritative observation from one local installation."""
+
+    __tablename__ = "device_telemetry_events"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    installation_hash = Column(String(64), nullable=False)
+    event_id = Column(String(36), nullable=False)
+    schema_version = Column(Integer, nullable=False)
+    event_type = Column(String(64), nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    payload = Column(JSON, nullable=False)
+    received_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("user_id", "installation_hash", "event_id",
+                         name="uq_device_telemetry_event_replay"),
+        Index("ix_device_telemetry_tenant_received", "user_id", "received_at"),
+        CheckConstraint("schema_version > 0", name="ck_device_telemetry_schema"),
+    )
+
+
+class DeviceTelemetryProjection(Base):
+    __tablename__ = "device_telemetry_projections"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    installation_hash = Column(String(64), nullable=False)
+    last_event_id = Column(String(36), nullable=False)
+    last_event_at = Column(DateTime(timezone=True), nullable=False)
+    last_received_at = Column(DateTime(timezone=True), nullable=False)
+    software_version = Column(String(128), nullable=False)
+    configuration_version = Column(String(128), nullable=False)
+    health = Column(JSON, nullable=False, default=dict)
+    lifecycle = Column(JSON, nullable=False, default=dict)
+    latest_position = Column(JSON, nullable=True)
+    latest_fill = Column(JSON, nullable=True)
+    latest_pnl = Column(JSON, nullable=True)
+    latest_risk = Column(JSON, nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("user_id", "installation_hash", name="uq_device_telemetry_projection"),
+    )
+
+
 class UserCreate(BaseModel):
     username: str
     email: str

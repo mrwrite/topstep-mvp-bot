@@ -1,0 +1,9 @@
+# Build tooling is intentionally separate from runtime dependencies.
+pyinstaller==6.16.0
+altgraph==0.17.4
+packaging==25.0
+macholib==1.16.3; sys_platform == "darwin"
+pefile==2023.2.7; sys_platform == "win32"
+pyinstaller-hooks-contrib==2025.8
+pywin32-ctypes==0.2.3; sys_platform == "win32"
+setuptools==80.9.0

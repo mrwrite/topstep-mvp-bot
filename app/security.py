@@ -1,6 +1,9 @@
 import bcrypt
+import os
 
 MAX_BCRYPT_BYTES = 72
+PRODUCTION_BCRYPT_ROUNDS = 12
+TEST_BCRYPT_ROUNDS = 4
 
 
 def _ensure_bytes(password: str) -> bytes:
@@ -13,7 +16,12 @@ def hash_password(password: str) -> str:
     secret = _ensure_bytes(password)
     if len(secret) > MAX_BCRYPT_BYTES:
         raise ValueError("Password cannot exceed 72 bytes when encoded to UTF-8.")
-    hashed = bcrypt.hashpw(secret, bcrypt.gensalt())
+    rounds = (
+        TEST_BCRYPT_ROUNDS
+        if os.getenv("APP_ENV", "development").strip().lower() == "test"
+        else PRODUCTION_BCRYPT_ROUNDS
+    )
+    hashed = bcrypt.hashpw(secret, bcrypt.gensalt(rounds=rounds))
     return hashed.decode("utf-8")
 
 

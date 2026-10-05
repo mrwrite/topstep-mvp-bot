@@ -1,3 +1,5 @@
+> **Superseded execution target (2026-10-02):** Hosted execution requirements in this delta are replaced by `add-local-topstep-combine-executor`. Only the explicit hosted mutation prohibition remains authoritative; personal-device specs govern all provider mutations.
+
 ## ADDED Requirements
 
 ### Requirement: Durable worker is sole provider executor

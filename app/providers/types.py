@@ -69,9 +69,11 @@ PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {
 
 IMPLEMENTED_PROVIDER_CAPABILITIES: dict[IntegrationProvider, set[IntegrationCapability]] = {
     IntegrationProvider.TOPSTEPX: {
-        IntegrationCapability.BROKER_TRADING,
         IntegrationCapability.MARKET_DATA,
         IntegrationCapability.ACCOUNT_INFO,
+        # Internal hosted paper simulation is not a provider mutation. The
+        # adapter still does not implement BROKER_TRADING.
+        IntegrationCapability.PAPER_TRADING,
     },
     IntegrationProvider.TRADINGVIEW: {
         IntegrationCapability.SIGNALS,

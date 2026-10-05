@@ -1,3 +1,5 @@
+> **Superseded credential boundary (2026-10-02):** Hosted Topstep credential onboarding and session custody are replaced by local OS-backed custody in `add-local-topstep-combine-executor`. Hosted endpoints must refuse new provider secrets and retain only deletion/migration behavior.
+
 ## ADDED Requirements
 
 ### Requirement: Backend-only Topstep credential validation
