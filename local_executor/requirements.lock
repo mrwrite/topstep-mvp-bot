@@ -12,4 +12,5 @@ Mako==1.4.3
 MarkupSafe==3.0.3
 pycparser==3.0
 typing_extensions==4.16.0
+tzdata==2026.5
 urllib3==2.8.0
