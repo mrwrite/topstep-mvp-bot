@@ -37,7 +37,7 @@ async def test_trade(
         db,
         user_id=current_user.id,
         trading_mode=trading_mode,
-        required_capabilities={IntegrationCapability.BROKER_TRADING},
+        required_capabilities={IntegrationCapability.PAPER_TRADING},
         require_integration=True,
     )
     integration = context.integration
@@ -110,7 +110,7 @@ async def receive_signal(
             trading_mode=signal.trading_mode,
             integration_id=signal.broker_integration_id,
             symbol=signal.symbol,
-            required_capabilities={IntegrationCapability.BROKER_TRADING},
+            required_capabilities={IntegrationCapability.PAPER_TRADING},
             require_integration=True,
             require_contract=True,
         )
@@ -121,7 +121,7 @@ async def receive_signal(
             user_id=signal_integration.user_id,
             trading_mode=signal.trading_mode,
             symbol=signal.symbol,
-            required_capabilities={IntegrationCapability.BROKER_TRADING},
+            required_capabilities={IntegrationCapability.PAPER_TRADING},
             require_integration=False,
             require_contract=True,
             allow_paper_fallback=True,

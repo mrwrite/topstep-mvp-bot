@@ -170,7 +170,7 @@ class LaunchGateService:
                 integration_id=integration_id,
                 account_id=account_id,
                 symbol=normalized_symbol,
-                required_capabilities={IntegrationCapability.BROKER_TRADING},
+                required_capabilities={IntegrationCapability.PAPER_TRADING},
                 require_integration=True,
                 require_account=True,
                 require_contract=True,

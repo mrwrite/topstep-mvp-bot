@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from .simulation_worker import periodic_recovery, recovery_cycle
 from . import database, crypto
+from .hosted_execution_boundary import enforce_hosted_execution_boundary
+from .providers.topstepx import TopStepXAdapter
 
 
 async def main() -> None:
@@ -15,8 +17,7 @@ async def main() -> None:
         raise RuntimeError("Dedicated worker requires SERVICE_ROLE=worker.")
     if database.APP_CONFIG.deployment_profile != "hosted_topstep_combine_beta":
         raise RuntimeError("Dedicated hosted-beta worker requires the approved hosted profile.")
-    if os.getenv("PROVIDER_MUTATIONS_ENABLED", "false").strip().lower() != "false":
-        raise RuntimeError("Provider mutation capabilities must remain disabled.")
+    enforce_hosted_execution_boundary(TopStepXAdapter)
     if database.APP_CONFIG.is_production and not crypto.key_management_health().get("available"):
         raise RuntimeError("Worker key-management readiness failed closed.")
     worker_id = f"railway-durable-worker:{uuid4().hex}"

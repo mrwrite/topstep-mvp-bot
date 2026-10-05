@@ -1,3 +1,5 @@
+> **Superseded execution target (2026-10-02):** `add-local-topstep-combine-executor` replaces Railway provider execution and hosted Topstep credential custody. This change remains historical evidence for hosted read-only controls, migrations, deletion, and telemetry only. Its hosted order-execution requirements MUST NOT be implemented.
+
 ## Why
 
 The next evidence target is a reversible, one-tester Topstep Trading Combine beta on Vercel and Railway rather than immediate Raspberry Pi production. The hosted slice must permit meaningful simulated-provider testing without weakening tenant boundaries, durable execution, credential protection, or the server-side prohibition on live trading.

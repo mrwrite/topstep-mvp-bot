@@ -56,7 +56,7 @@ def violations(root: Path = ROOT) -> list[str]:
     adapter = (root / "app/providers/topstepx.py").read_text(encoding="utf-8")
     if adapter.count('"live": False') < 2:
         failures.append("app/providers/topstepx.py: simulated market selection guard missing")
-    if "provider order submission is disabled" not in adapter:
+    if "local_executor_required" not in adapter:
         failures.append("app/providers/topstepx.py: order-submission fail-closed guard missing")
     session_security = (root / "app/topstep_session_security.py").read_text(encoding="utf-8")
     for required in (

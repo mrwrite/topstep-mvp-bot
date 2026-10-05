@@ -10,6 +10,18 @@ from .base import ProviderAdapter, ProviderCapabilityError, ProviderError
 from .types import IntegrationCapability, IntegrationProvider
 
 
+LOCAL_EXECUTOR_REQUIRED = "local_executor_required"
+
+
+def _local_executor_required(action: str) -> ProviderCapabilityError:
+    return ProviderCapabilityError(
+        f"TopStepX provider {action} is disabled on hosted services; "
+        "use the personal-device executor.",
+        code=LOCAL_EXECUTOR_REQUIRED,
+        details={"execution_origin": "personal_device"},
+    )
+
+
 class TopStepXAdapter(ProviderAdapter):
     provider = IntegrationProvider.TOPSTEPX
     mutation_capabilities_enabled = False
@@ -204,18 +216,21 @@ class TopStepXAdapter(ProviderAdapter):
         )
 
     async def place_order(self, order: dict) -> dict:
-        raise ProviderCapabilityError(
-            "TopStepX provider order submission is disabled in this implementation slice."
-        )
+        raise _local_executor_required("order submission")
 
     async def cancel_order(self, provider_order_id: str) -> dict:
-        raise ProviderCapabilityError("TopStepX order cancellation is disabled in this implementation slice.")
+        raise _local_executor_required("order cancellation")
 
     async def modify_order(self, provider_order_id: str, order: dict) -> dict:
-        raise ProviderCapabilityError("TopStepX order modification is disabled in this implementation slice.")
+        raise _local_executor_required("order modification")
 
     async def close_position(self, account_id: str, contract_id: str) -> dict:
-        raise ProviderCapabilityError("TopStepX position close is disabled in this implementation slice.")
+        raise _local_executor_required("position close")
+
+    async def partial_close_position(
+        self, account_id: str, contract_id: str, quantity: int
+    ) -> dict:
+        raise _local_executor_required("partial position close")
 
     def get_bars(
         self,

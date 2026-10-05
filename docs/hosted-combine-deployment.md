@@ -1,5 +1,7 @@
 # Hosted Topstep Combine deployment template
 
+> Superseded execution boundary: Railway and Vercel are read-only support and telemetry services. Topstep credentials and every provider mutation belong exclusively to the interactive personal-device executor defined by `add-local-topstep-combine-executor`. Hosted services MUST NOT route or relay orders.
+
 This is a deployment template, not deployment evidence. No Vercel or Railway service has been
 created by this change. Provider orders remain disabled.
 
@@ -10,7 +12,7 @@ created by this change. Provider orders remain disabled.
   Vercel.
 - Railway API: root Dockerfile, `SERVICE_ROLE=api`, `APP_ENV=production`, `DEPLOYMENT_PROFILE=hosted_topstep_combine_beta`.
 - Railway worker: same immutable image, start command `python -m app.worker_entrypoint`,
-  `SERVICE_ROLE=worker`; do not expose a public domain.
+  `SERVICE_ROLE=worker`; do not expose a public domain and do not grant Topstep credentials or mutation authority.
 - Railway PostgreSQL and Redis: internal Railway references only. PostgreSQL is authoritative;
   Redis is only rate-limit/coordination infrastructure.
 - Controlled release step: `alembic upgrade head`, followed by readiness verification before API
@@ -47,7 +49,7 @@ runbooks.
 1. Create PostgreSQL and Redis without public exposure; capture backup and restore evidence.
 2. Apply Alembic as a controlled release step and verify the single current head.
 3. Deploy API with provider mutations disabled; check `/health/live` and `/health/ready`.
-4. Deploy the separate worker privately; verify heartbeat and lease handoff after restart.
+4. Deploy the separate worker privately; verify heartbeat, lease handoff, and permanent provider-mutation rejection after restart.
 5. Build/deploy Vercel; verify CSP, exact CORS, authentication, response and bundle scans.
 6. Do not invite a tester until policy, consent, read-only provider evidence, recovery, and owner
    approval checks have been completed.
@@ -57,5 +59,4 @@ authoritative PostgreSQL database, and redeploy the prior immutable image only i
 compatibility is established. Never restore an old database into service without incrementing
 `HOSTED_SECURITY_EPOCH` and completing revoke-by-default reconciliation. No order replay is allowed.
 
-No external backup restore, deployed health check, Railway worker restart, or Vercel build has been
-claimed by the local template.
+No hosted deployment evidence authorizes provider execution. Personal-device installation, Practice qualification, and any separately authorized Combine order require their own evidence.

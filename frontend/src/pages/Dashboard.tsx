@@ -147,6 +147,20 @@ type OperationalStatus = {
   }>;
 };
 
+type DeviceTelemetry = {
+  read_only: true;
+  execution_authority: 'personal_device';
+  installations: Array<{
+    installation_hash: string;
+    last_device_event_at: string;
+    freshness_seconds: number;
+    freshness: 'delayed_read_only' | 'stale';
+    health: Record<string, unknown>;
+    lifecycle: Record<string, unknown>;
+    controls_available: false;
+  }>;
+};
+
 type LegalStatus = {
   all_required_accepted: boolean;
   live_trading_enabled: boolean;
@@ -327,6 +341,7 @@ function Dashboard() {
   const [paperAccounts, setPaperAccounts] = useState<PaperAccount[]>([]);
   const [launchGate, setLaunchGate] = useState<LaunchGate | null>(null);
   const [opsStatus, setOpsStatus] = useState<OperationalStatus | null>(null);
+  const [deviceTelemetry, setDeviceTelemetry] = useState<DeviceTelemetry | null>(null);
   const [legalStatus, setLegalStatus] = useState<LegalStatus | null>(null);
   const [betaStatus, setBetaStatus] = useState<BetaStatus | null>(null);
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
@@ -435,6 +450,11 @@ function Dashboard() {
   const refreshSubscriptionStatus = async () => {
     const res = await api.get('/subscription/status');
     setSubscriptionStatus(res.data);
+  };
+
+  const refreshDeviceTelemetry = async () => {
+    const res = await api.get('/device-telemetry');
+    setDeviceTelemetry(res.data);
   };
 
   const completeOnboardingMilestone = async (code: string) => {
@@ -567,6 +587,9 @@ function Dashboard() {
     refreshSubscriptionStatus().catch(err => {
       console.error('Failed to load subscription status', err);
       setReadinessError('Subscription entitlement status is unavailable. Beta features remain gated by the backend.');
+    });
+    refreshDeviceTelemetry().catch(err => {
+      console.error('Failed to load local device telemetry', err);
     });
   }, [navigate]);
 
@@ -1487,6 +1510,17 @@ function Dashboard() {
 
         <main className="main">
           <section className="status-grid">
+            <div className="card compact">
+              <p className="tiny muted">Personal-device executor</p>
+              <strong>
+                {deviceTelemetry?.installations[0]?.freshness === 'delayed_read_only'
+                  ? 'Reporting'
+                  : deviceTelemetry?.installations[0]?.freshness === 'stale'
+                    ? 'Stale'
+                    : 'No telemetry'}
+              </strong>
+              <p className="tiny muted">Delayed/read-only · controls stay on the device</p>
+            </div>
             <div className="card compact">
               <p className="tiny muted">Mode</p>
               <strong>{sessionSummary.mode}</strong>

@@ -52,5 +52,13 @@ def get_all_contracts(token: str):
 
 
 def execute_trade(symbol: str, side: str, quantity: int, token: str):
-    """Fail closed until the durable provider-execution slice is implemented."""
-    return {"success": False, "errorMessage": "Provider order submission is disabled."}
+    """Legacy hosted mutation surface; execution requires the local executor."""
+    return {
+        "success": False,
+        "errorCode": "local_executor_required",
+        "classification": "local_executor_required",
+        "errorMessage": (
+            "Provider order submission is disabled on hosted services; "
+            "use the personal-device executor."
+        ),
+    }

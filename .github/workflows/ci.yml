@@ -40,6 +40,8 @@ jobs:
       - run: python -m pip_audit -r requirements.lock
       - run: python -m compileall -q app scripts
       - run: python scripts/check_key_management_architecture.py
+      - run: python scripts/check_hosted_combine_safety.py
+      - run: python scripts/check_local_executor_architecture.py
       - run: alembic upgrade head
       - run: alembic heads
       - run: alembic history
@@ -91,3 +93,72 @@ jobs:
       - run: npm install --global @fission-ai/openspec@1.3.1
       - run: openspec validate --all --strict
       - run: git diff --check
+
+  local-executor-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            local_executor/requirements.lock
+            local_executor/requirements-build.lock
+      - run: python -m pip install -r local_executor/requirements.lock pytest==9.0.3
+      - run: pytest -q tests/local_executor --basetemp=.pytest-tmp-local-executor
+      - run: python scripts/check_local_executor_architecture.py
+      - run: choco install innosetup -y --no-progress
+      - shell: pwsh
+        run: ./scripts/build_local_executor.ps1
+      - shell: pwsh
+        run: |
+          $result = & ./dist/local-executor/topstep-local-executor.exe --status-json | ConvertFrom-Json
+          if ($result.mutation_capable -ne $false) { throw "Unsigned CI executable became mutation capable." }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-local-executor-windows-ci-artifacts
+          path: |
+            dist/local-executor/topstep-local-executor.exe
+            dist/local-executor/Topstep-Local-Executor-Setup.exe
+          if-no-files-found: error
+
+  local-executor-macos:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            local_executor/requirements.lock
+            local_executor/requirements-build.lock
+      - run: python -m pip install -r local_executor/requirements.lock pytest==9.0.3
+      - run: pytest -q tests/local_executor --basetemp=.pytest-tmp-local-executor
+      - run: python scripts/check_local_executor_architecture.py
+      - run: bash scripts/build_local_executor_macos.sh
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          from local_executor.config import ExecutorMode, LocalExecutorConfig
+          from local_executor.runtime import RuntimeFacts, evaluate_runtime
+
+          config = LocalExecutorConfig(
+              mode=ExecutorMode.MUTATION,
+              data_directory=Path(".pytest-macos-runtime").resolve(),
+          )
+          result = evaluate_runtime(
+              config,
+              RuntimeFacts("Darwin", True, {}, container_detected=False),
+          )
+          if result.mutation_capable:
+              raise SystemExit("Unsigned CI app became mutation capable")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-local-executor-macos-ci-artifact
+          path: dist/local-executor-macos/Topstep-Local-Executor-*.dmg
+          if-no-files-found: error

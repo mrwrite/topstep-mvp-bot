@@ -1,3 +1,5 @@
+> **Superseded execution target (2026-10-02):** `add-local-topstep-combine-executor` is authoritative for provider credentials and mutations. Railway/Vercel are read-only support and sanitized telemetry. Sections below describing hosted credential custody or Railway order execution are retained as historical design context and MUST NOT be used for implementation.
+
 ## Context
 
 The application already has tenant-scoped durable commands, fenced workers, checkpoints, outbox delivery, deterministic evaluation, risk and ledger workflows, server-side live-trading rejection, and provider-neutral record envelopes. The previous production target was a self-hosted Raspberry Pi with a physical TPM. The immediate owner-approved target is instead one invited tester using one administratively approved Topstep Trading Combine through a Vercel frontend and separate Railway API, worker, PostgreSQL, and Redis services.

@@ -1,6 +1,6 @@
 # Hosted Topstep Trading Combine beta operations
 
-Status: software preparation only. No Vercel, Railway, Topstep credential, dry-run, or order evidence has been collected.
+Status: hosted read-only support only. Provider execution and Topstep credential custody have moved to the personal-device executor defined by `add-local-topstep-combine-executor`. Railway and Vercel MUST NOT place, modify, cancel, route, relay, or trigger orders. No hosted Topstep credential or provider-order evidence is accepted after this supersession.
 
 ## Scope and accepted risk
 
@@ -11,11 +11,11 @@ This profile permits one invited tester, one tenant, one TopstepX integration, a
 ## Topology
 
 - Vercel: frontend assets only. It receives only the public Railway API URL.
-- Railway API: public FastAPI HTTPS endpoint; it validates requests and creates durable commands but never owns execution.
-- Railway worker: private durable command/evaluation/outbox worker with leases and fencing; no public route.
+- Railway API: public FastAPI HTTPS endpoint for read-only administration and sanitized device telemetry; it never creates order-capable commands.
+- Railway worker: private simulation/evaluation/telemetry worker with leases and fencing; it has no provider credentials or mutation authority.
 - Railway PostgreSQL: authoritative commands, approvals, leases, checkpoints, outbox, risk, deletion, and audit state.
 - Railway Redis: non-authoritative rate-limit/cache/coordination state only.
-- TopstepX: external simulated provider. Contract/history selection always sends `live: false`.
+- TopstepX: contacted for trading only by the interactive personal-device executor. Hosted contract/history access remains read-only and always sends `live: false`.
 
 ## Variable inventory
 
@@ -61,10 +61,11 @@ Generate each 32-byte wrapping key in a trusted operator environment and enter i
 3. Deploy API with provider execution disabled; verify key-provider/database readiness, exact CORS, trusted proxy, secure cookies, rate limits, redacted logs, and health.
 4. Deploy the separate worker with provider execution disabled; verify heartbeat, graceful stop, lease expiry/handoff, fencing, and reconciliation after restart.
 5. Deploy Vercel and scan the bundle/responses for secrets. Reject arbitrary preview origins.
-6. Complete onboarding, ownership snapshot, attestation, exact approval, consent, connectivity, dry run, and kill drills.
-7. A real minimum-size Combine order requires immediate explicit owner confirmation and is never CI automation.
+6. Verify hosted Topstep credential submission is refused and the hosted UI remains read-only.
+7. Complete credential enrollment, Practice qualification, attestation, consent, risk, reconciliation, and kill drills on the personal device.
+8. A minimum-size Combine order requires immediate local user confirmation and is never sent by Railway, Vercel, or CI.
 
-Rollback starts by disabling provider execution and activating global/tenant/account/run kills. Revoke approval, stop new claims, cancel pending commands, reconcile every ambiguous attempt, then roll back API/worker/frontend while retaining the compatible database. Database downgrade or key removal requires exact dependency inventory, successful restore evidence, approval, and documented loss/rollback implications.
+Hosted rollback never owns provider execution. Local rollback starts with the personal-device kill and direct TopstepX verification; hosted rollback stops telemetry processing and preserves compatible read-only projections. Database downgrade or key removal requires exact dependency inventory, successful restore evidence, approval, and documented loss/rollback implications.
 
 ## Disconnect, restore, and incident response
 

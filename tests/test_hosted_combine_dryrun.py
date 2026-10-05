@@ -12,6 +12,10 @@ from app.authorization import TenantContext
 from app.hosted_combine_dryrun import (
     HostedDryRunError, process_pending_dry_runs, validate_policy,
 )
+from app.hosted_execution_boundary import (
+    HOSTED_MUTATION_FLAGS,
+    enforce_hosted_execution_boundary,
+)
 from app.providers.base import ProviderCapabilityError
 from app.providers.topstepx import TopStepXAdapter
 from app.tenant_repository import TenantRepository
@@ -141,9 +145,47 @@ def test_topstep_mutation_capabilities_fail_closed():
         (adapter.cancel_order, ("provider-order-fixture",)),
         (adapter.modify_order, ("provider-order-fixture", {})),
         (adapter.close_position, ("account-fixture", "contract-fixture")),
+        (adapter.partial_close_position, ("account-fixture", "contract-fixture", 1)),
     ):
-        with pytest.raises(ProviderCapabilityError):
+        with pytest.raises(ProviderCapabilityError) as exc_info:
             asyncio.run(method(*args))
+        assert exc_info.value.code == "local_executor_required"
+        assert exc_info.value.to_dict()["retryable"] is False
+
+
+@pytest.mark.parametrize("flag", HOSTED_MUTATION_FLAGS)
+@pytest.mark.parametrize("truthy", ["1", "true", "yes", "on", "TRUE"])
+def test_hosted_mutation_flags_cannot_enable_provider_execution(flag, truthy):
+    with pytest.raises(RuntimeError, match="local_executor_required"):
+        enforce_hosted_execution_boundary(TopStepXAdapter, {flag: truthy})
+
+
+@pytest.mark.parametrize("profile", ["hosted_topstep_combine_beta", "production", "default"])
+@pytest.mark.parametrize("service_role", ["api", "worker", "combined", ""])
+def test_hosted_profiles_and_service_roles_remain_read_only(profile, service_role):
+    result = enforce_hosted_execution_boundary(
+        TopStepXAdapter,
+        {
+            "DEPLOYMENT_PROFILE": profile,
+            "SERVICE_ROLE": service_role,
+            "PROVIDER_MUTATIONS_ENABLED": "false",
+            "TOPSTEP_PROVIDER_EXECUTION_ENABLED": "false",
+            "HOSTED_PROVIDER_EXECUTION_ENABLED": "false",
+            "LIVE_TRADING_ENABLED": "false",
+        },
+    )
+    assert result == {
+        "classification": "local_executor_required",
+        "mutation_capable": False,
+    }
+
+
+def test_adapter_class_cannot_be_mutation_capable_even_without_flags():
+    class UnsafeAdapter:
+        mutation_capabilities_enabled = True
+
+    with pytest.raises(RuntimeError, match="local_executor_required"):
+        enforce_hosted_execution_boundary(UnsafeAdapter, {})
 
 
 def test_preflight_rejects_production_placeholders_without_echoing_values():
