@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+// Production browser traffic stays on the Vercel origin and is forwarded to
+// Railway by vercel.json. This keeps the HttpOnly session and readable CSRF
+// cookies first-party instead of relying on third-party cookie support.
+export const API_BASE_URL = import.meta.env.PROD
+  ? '/api'
+  : import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

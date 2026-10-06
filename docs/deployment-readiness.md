@@ -25,9 +25,10 @@ The readiness endpoint fails in production if the database cannot be reached or 
 
 ## Frontend: Vercel or Equivalent
 
-Required frontend environment variables:
-
-- `VITE_API_URL=https://your-backend.example.com`
+Production browser requests use the same-origin `/api` path. `frontend/vercel.json`
+proxies that path to the Railway API so secure session and CSRF cookies are not
+dependent on third-party-cookie behavior. `VITE_API_URL` is only used for local
+development when the API runs on a different origin.
 
 Build command:
 
