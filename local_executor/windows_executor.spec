@@ -11,7 +11,9 @@ a = Analysis(
         (str(root / "local_executor" / "alembic.ini"), "local_executor"),
         (str(root / "local_executor" / "migrations"), "local_executor/migrations"),
     ],
-    hiddenimports=[],
+    # Alembic loads migrations/env.py dynamically; its logging.config import is
+    # not visible to PyInstaller's static dependency analysis.
+    hiddenimports=["logging.config"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
