@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 import getpass
+import io
 import os
 from pathlib import Path
 import sqlite3
@@ -29,9 +31,23 @@ def sqlite_url(path: Path) -> str:
 def apply_user_only_permissions(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
-        domain = os.environ.get("USERDOMAIN", "").strip()
-        username = os.environ.get("USERNAME", "").strip() or getpass.getuser()
-        principal = f"{domain}\\{username}" if domain else username
+        # Prefer the token SID over USERDOMAIN/USERNAME: packaged processes can
+        # inherit stale account variables from a launcher or managed desktop.
+        identity = subprocess.run(
+            ["whoami", "/user", "/fo", "csv", "/nh"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        principal = ""
+        for row in csv.reader(io.StringIO(getattr(identity, "stdout", "") or "")):
+            if len(row) >= 2 and row[1].startswith("S-"):
+                principal = f"*{row[1]}"
+                break
+        if not principal:
+            domain = os.environ.get("USERDOMAIN", "").strip()
+            username = os.environ.get("USERNAME", "").strip() or getpass.getuser()
+            principal = f"{domain}\\{username}" if domain else username
         result = subprocess.run(
             ["icacls", str(path), "/inheritance:r", "/grant:r", f"{principal}:(OI)(CI)F"],
             capture_output=True,

@@ -329,13 +329,23 @@ def test_permission_command_is_user_scoped(tmp_path, monkeypatch):
     calls = []
 
     class Result:
-        returncode = 0
+        def __init__(self, stdout=""):
+            self.returncode = 0
+            self.stdout = stdout
 
-    monkeypatch.setattr("local_executor.journal.subprocess.run",
-                        lambda args, **kwargs: calls.append(args) or Result())
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        stdout = '"USER","S-1-5-21-123456789-123456789-123456789-1001"' \
+            if args[0] == "whoami" else ""
+        return Result(stdout=stdout)
+
+    monkeypatch.setattr("local_executor.journal.subprocess.run", fake_run)
     apply_user_only_permissions(tmp_path / "secure")
     if __import__("os").name == "nt":
-        assert calls and calls[0][0] == "icacls"
-        assert "/inheritance:r" in calls[0] and "/grant:r" in calls[0]
+        assert calls[0] == ["whoami", "/user", "/fo", "csv", "/nh"]
+        icacls_call = calls[1]
+        assert icacls_call[0] == "icacls"
+        assert "/inheritance:r" in icacls_call and "/grant:r" in icacls_call
+        assert icacls_call[-1] == "*S-1-5-21-123456789-123456789-123456789-1001:(OI)(CI)F"
     else:
         assert not calls
